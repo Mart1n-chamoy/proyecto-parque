@@ -4,6 +4,7 @@ from rest_framework.response import Response
 from django_filters.rest_framework import DjangoFilterBackend
 from .models import CallBatch, Call
 from .serializers import CallBatchSerializer, CallSerializer
+from .tasks import process_call_batch, retry_failed_call
 
 
 class CallBatchViewSet(viewsets.ModelViewSet):
@@ -42,19 +43,29 @@ class CallBatchViewSet(viewsets.ModelViewSet):
     
     @action(detail=True, methods=['post'])
     def start(self, request, pk=None):
-        """Iniciar el procesamiento de un lote"""
-        from django.utils import timezone
+        """Iniciar el procesamiento de un lote (tarea asincrónica)"""
         batch = self.get_object()
         if batch.status != 'pending':
             return Response(
                 {'error': 'Solo se pueden iniciar lotes en estado pendiente'},
                 status=status.HTTP_400_BAD_REQUEST
             )
+        
+        # Enviar tarea asincrónica a Celery
+        process_call_batch.delay(batch.id)
+        
         batch.status = 'processing'
+        from django.utils import timezone
         batch.started_at = timezone.now()
         batch.save()
         serializer = self.get_serializer(batch)
-        return Response(serializer.data, status=status.HTTP_200_OK)
+        return Response(
+            {
+                **serializer.data,
+                'message': 'Lote iniciado. El procesamiento ocurre en segundo plano.'
+            },
+            status=status.HTTP_200_OK
+        )
     
     @action(detail=True, methods=['post'])
     def complete(self, request, pk=None):
@@ -111,15 +122,22 @@ class CallViewSet(viewsets.ModelViewSet):
     
     @action(detail=True, methods=['post'])
     def retry(self, request, pk=None):
-        """Reintentar una llamada fallida"""
+        """Reintentar una llamada fallida (tarea asincrónica)"""
         call = self.get_object()
         if call.status != 'failed':
             return Response(
                 {'error': 'Solo se pueden reintentar llamadas fallidas'},
                 status=status.HTTP_400_BAD_REQUEST
             )
-        call.status = 'pending'
-        call.error_message = ''
-        call.save()
+        
+        # Enviar tarea asincrónica a Celery
+        retry_failed_call.delay(call.id)
+        
         serializer = self.get_serializer(call)
-        return Response(serializer.data, status=status.HTTP_200_OK)
+        return Response(
+            {
+                **serializer.data,
+                'message': 'Llamada en cola para reintentar'
+            },
+            status=status.HTTP_200_OK
+        )
