@@ -1,8 +1,9 @@
-from django.urls import path
+from rest_framework.routers import DefaultRouter
 from . import views
 
 app_name = 'clients'
 
-urlpatterns = [
-    # Los endpoints serán implementados en el futuro
-]
+router = DefaultRouter()
+router.register(r'', views.ClientViewSet, basename='client')
+
+urlpatterns = router.urls

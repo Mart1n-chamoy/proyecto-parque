@@ -1,8 +1,10 @@
-from django.urls import path
+from rest_framework.routers import DefaultRouter
 from . import views
 
 app_name = 'calls'
 
-urlpatterns = [
-    # Los endpoints serán implementados en el futuro
-]
+router = DefaultRouter()
+router.register(r'batches', views.CallBatchViewSet, basename='call-batch')
+router.register(r'', views.CallViewSet, basename='call')
+
+urlpatterns = router.urls
