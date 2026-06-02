@@ -147,10 +147,6 @@ docker-compose down
 4. Push a la rama (`git push origin feature/AmazingFeature`)
 5. Abre un Pull Request
 
-## 📝 Licencia
-
-MIT
 
 ## ✉️ Contacto
-
-Luis Martín Chamoy - [@Mart1n-chamoy](https://github.com/Mart1n-chamoy)
+Martín [@Mart1n-chamoy](https://github.com/Mart1n-chamoy)
