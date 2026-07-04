@@ -21,6 +21,22 @@ class CallBatch(models.Model):
     started_at = models.DateTimeField(_('Iniciado'), null=True, blank=True)
     completed_at = models.DateTimeField(_('Completado'), null=True, blank=True)
 
+    # Integración ElevenLabs
+    elevenlabs_batch_id = models.CharField(
+        max_length=200, blank=True, null=True,
+        help_text="ID del lote en ElevenLabs"
+    )
+    celery_task_id = models.CharField(
+        max_length=200, blank=True, null=True,
+        help_text="ID de la tarea Celery que procesó este lote"
+    )
+    started_at = models.DateTimeField(
+        blank=True, null=True
+    )
+    completed_at = models.DateTimeField(
+        blank=True, null=True
+    )
+
     class Meta:
         verbose_name = _('Lote de Llamadas')
         verbose_name_plural = _('Lotes de Llamadas')
@@ -49,6 +65,35 @@ class Call(models.Model):
     created_at = models.DateTimeField(_('Creado'), auto_now_add=True)
     started_at = models.DateTimeField(_('Iniciado'), null=True, blank=True)
     completed_at = models.DateTimeField(_('Completado'), null=True, blank=True)
+
+    # Integración ElevenLabs
+    elevenlabs_conversation_id = models.CharField(
+        max_length=200, blank=True, null=True,
+        help_text="ID de conversación en ElevenLabs"
+    )
+    transcript_text = models.TextField(
+        blank=True, null=True,
+        help_text="Transcripción completa de la llamada"
+    )
+    audio_file = models.FileField(
+        upload_to="calls/", blank=True, null=True,
+        help_text="Archivo de audio MP3 de la llamada"
+    )
+    duration_seconds = models.IntegerField(
+        blank=True, null=True,
+        help_text="Duración de la llamada en segundos"
+    )
+    outcome = models.CharField(
+        max_length=100, blank=True, null=True,
+        help_text="Resultado según ElevenLabs (ej: payment_arranged, no_answer)"
+    )
+    retry_count = models.IntegerField(
+        default=0,
+        help_text="Cantidad de reintentos realizados"
+    )
+    completed_at = models.DateTimeField(
+        blank=True, null=True
+    )
 
     class Meta:
         verbose_name = _('Llamada')
