@@ -52,7 +52,7 @@ class ElevenLabsService:
         GET /v1/convai/agents/{agent_id}
         """
         url = f"{self.base_url}/convai/agents/{self.agent_id}"
-        with httpx.Client(timeout=30) as client:
+        with httpx.Client(timeout=30, follow_redirects=True) as client:
             resp = client.get(url, headers=self._headers())
             resp.raise_for_status()
             return resp.json()
@@ -73,7 +73,7 @@ class ElevenLabsService:
                 }
             }
         }
-        with httpx.Client(timeout=30) as client:
+        with httpx.Client(timeout=30, follow_redirects=True) as client:
             resp = client.patch(url, headers=self._headers(), json=payload)
             resp.raise_for_status()
             return resp.json()
@@ -89,7 +89,7 @@ class ElevenLabsService:
         GET /v1/convai/batches
         """
         url = f"{self.base_url}/convai/batches"
-        with httpx.Client(timeout=30) as client:
+        with httpx.Client(timeout=30, follow_redirects=True) as client:
             resp = client.get(url, headers=self._headers())
             resp.raise_for_status()
             return resp.json().get("batches", [])
@@ -102,7 +102,7 @@ class ElevenLabsService:
         GET /v1/convai/batches/{batch_id}
         """
         url = f"{self.base_url}/convai/batches/{el_batch_id}"
-        with httpx.Client(timeout=30) as client:
+        with httpx.Client(timeout=30, follow_redirects=True) as client:
             resp = client.get(url, headers=self._headers())
             resp.raise_for_status()
             return resp.json()
@@ -157,7 +157,7 @@ class ElevenLabsService:
             payload["scheduled_time"] = scheduled_time
 
         url = f"{self.base_url}/convai/batches"
-        with httpx.Client(timeout=60) as client:
+        with httpx.Client(timeout=60, follow_redirects=True) as client:
             resp = client.post(url, headers=self._headers(), json=payload)
             resp.raise_for_status()
             data = resp.json()
@@ -178,7 +178,7 @@ class ElevenLabsService:
         GET /v1/convai/conversations/{conversation_id}
         """
         url = f"{self.base_url}/convai/conversations/{conversation_id}"
-        with httpx.Client(timeout=30) as client:
+        with httpx.Client(timeout=30, follow_redirects=True) as client:
             resp = client.get(url, headers=self._headers())
             resp.raise_for_status()
             return resp.json()
@@ -191,7 +191,7 @@ class ElevenLabsService:
         GET /v1/convai/conversations/{conversation_id}/audio
         """
         url = f"{self.base_url}/convai/conversations/{conversation_id}/audio"
-        with httpx.Client(timeout=60) as client:
+        with httpx.Client(timeout=60, follow_redirects=True) as client:
             resp = client.get(url, headers={"xi-api-key": self.api_key})
             resp.raise_for_status()
             return resp.content

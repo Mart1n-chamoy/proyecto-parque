@@ -1,8 +1,10 @@
 import os
 from pathlib import Path
 from datetime import timedelta
+from dotenv import load_dotenv
 
 BASE_DIR = Path(__file__).resolve().parent.parent
+load_dotenv(BASE_DIR.parent / ".env")
 
 SECRET_KEY = os.environ.get('DJANGO_SECRET_KEY', 'django-insecure-change-this-in-production')
 
@@ -157,3 +159,4 @@ LOGGING = {
 }
 
 ELEVENLABS_API_KEY = os.environ.get('ELEVENLABS_API_KEY', '')
+ELEVENLABS_AGENT_ID = os.environ.get('ELEVENLABS_AGENT_ID', '')
