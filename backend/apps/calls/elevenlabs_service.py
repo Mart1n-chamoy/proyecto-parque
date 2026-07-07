@@ -20,10 +20,6 @@ ELEVENLABS_BASE_URL = "https://api.elevenlabs.io/v1"
 
 
 class ElevenLabsService:
-    """
-    Cliente para ElevenLabs Conversational AI API.
-    Usa httpx directamente para tener control total sobre los requests.
-    """
 
     def __init__(self):
         self.api_key = os.getenv("ELEVENLABS_API_KEY", "")
@@ -40,17 +36,11 @@ class ElevenLabsService:
         return bool(self.api_key and self.agent_id)
 
     # ─────────────────────────────────────────────
-    # FLUJO 1 - Configuración: obtener info del agente
+    # FLUJO 1 - Configuración
     # ─────────────────────────────────────────────
 
     def get_agent(self) -> dict:
-        """
-        Retorna la configuración actual del agente de ElevenLabs.
-        Útil para verificar que el agente esté bien configurado antes
-        de lanzar un lote.
-
-        GET /v1/convai/agents/{agent_id}
-        """
+        """GET /v1/convai/agents/{agent_id}"""
         url = f"{self.base_url}/convai/agents/{self.agent_id}"
         with httpx.Client(timeout=30, follow_redirects=True) as client:
             resp = client.get(url, headers=self._headers())
@@ -58,12 +48,7 @@ class ElevenLabsService:
             return resp.json()
 
     def update_agent_prompt(self, system_prompt: str, first_message: str) -> dict:
-        """
-        Actualiza el prompt del sistema y el primer mensaje del agente.
-        Útil si querés cambiar el texto de cobranza sin tocar el panel de EL.
-
-        PATCH /v1/convai/agents/{agent_id}
-        """
+        """PATCH /v1/convai/agents/{agent_id}"""
         url = f"{self.base_url}/convai/agents/{self.agent_id}"
         payload = {
             "conversation_config": {
@@ -79,36 +64,27 @@ class ElevenLabsService:
             return resp.json()
 
     # ─────────────────────────────────────────────
-    # FLUJO 2 - CRUD: listar y consultar lotes
+    # FLUJO 2 - CRUD lotes
     # ─────────────────────────────────────────────
 
     def list_batches(self) -> list[dict]:
-        """
-        Lista todos los lotes de llamadas en ElevenLabs.
-
-        GET /v1/convai/batch-calling/submit
-        """
-        url = f"{self.base_url}/convai/batch-calling/submit"
+        """GET /v1/convai/batch-calling/workspace"""
+        url = f"{self.base_url}/convai/batch-calling/workspace"
         with httpx.Client(timeout=30, follow_redirects=True) as client:
             resp = client.get(url, headers=self._headers())
             resp.raise_for_status()
             return resp.json().get("batches", [])
 
     def get_batch(self, el_batch_id: str) -> dict:
-        """
-        Obtiene el estado y detalle de un lote específico.
-        Incluye el estado individual de cada llamada dentro del lote.
-
-        GET /v1/convai/batch-calling/submit/{batch_id}
-        """
-        url = f"{self.base_url}/convai/batch-calling/submit/{el_batch_id}"
+        """GET /v1/convai/batch-calling/{batch_id}"""
+        url = f"{self.base_url}/convai/batch-calling/{el_batch_id}"
         with httpx.Client(timeout=30, follow_redirects=True) as client:
             resp = client.get(url, headers=self._headers())
             resp.raise_for_status()
             return resp.json()
 
     # ─────────────────────────────────────────────
-    # FLUJO 3 - Ejecución: crear y lanzar un lote
+    # FLUJO 3 - Ejecución
     # ─────────────────────────────────────────────
 
     def create_batch(
@@ -117,67 +93,55 @@ class ElevenLabsService:
         scheduled_time: Optional[str] = None,
     ) -> str:
         """
-        Crea y lanza un lote de llamadas en ElevenLabs.
-
-        Cada recipient DEBE tener:
-          - phone_number (str): número en formato E.164, ej: "+541155667788"
-
-        Columnas extra del CSV se pasan como variables dinámicas al agente:
-          - name       → {{name}} en el prompt
-          - amount     → {{amount}} en el prompt
-          - currency   → {{currency}} en el prompt
-
-        Retorna el batch_id de ElevenLabs.
-
         POST /v1/convai/batch-calling/submit
+
+        Cada recipient debe tener:
+          - phone_number (str): formato E.164, ej: "+5492616XXXXXX"
+          - name, amount, currency: variables dinámicas del agente
         """
         if not self.is_configured():
             raise ValueError(
-                "ELEVENLABS_API_KEY o ELEVENLABS_AGENT_ID no configurados. "
-                "Verificar variables de entorno."
+                "ELEVENLABS_API_KEY o ELEVENLABS_AGENT_ID no configurados."
             )
 
         payload = {
-    "call_name": f"Cobranza batch {len(recipients)} destinatarios",
-    "agent_id": self.agent_id,
-    "recipients": [
-        {
-            "phone_number": r["phone_number"],
-            "dynamic_variables": {
-                "name":     r.get("name", "Cliente"),
-                "amount":   str(r.get("amount", "")),
-                "currency": r.get("currency", "ARS"),
-            },
+            "call_name": f"Cobranza {len(recipients)} destinatarios",
+            "agent_id": self.agent_id,
+            "recipients": [
+                {
+                    "phone_number": r["phone_number"],
+                    "dynamic_variables": {
+                        "name":     r.get("name", "Cliente"),
+                        "amount":   str(r.get("amount", "")),
+                        "currency": r.get("currency", "ARS"),
+                    },
+                }
+                for r in recipients
+            ],
         }
-        for r in recipients
-    ],
-}
 
         if scheduled_time:
-            # ISO 8601: "2025-08-01T14:00:00Z"
             payload["scheduled_time"] = scheduled_time
 
         url = f"{self.base_url}/convai/batch-calling/submit"
         with httpx.Client(timeout=60, follow_redirects=True) as client:
             resp = client.post(url, headers=self._headers(), json=payload)
+            # Mostrar detalle del error si falla
+            if resp.is_error:
+                logger.error(f"ElevenLabs error {resp.status_code}: {resp.text}")
             resp.raise_for_status()
             data = resp.json()
 
-        el_batch_id = data.get("id")
-        logger.info(f"Lote creado en ElevenLabs: {el_batch_id} ({len(recipients)} destinatarios)")
+        el_batch_id = data.get("batch_id") or data.get("id")
+        logger.info(f"Lote creado: {el_batch_id} ({len(recipients)} destinatarios)")
         return el_batch_id
 
     # ─────────────────────────────────────────────
-    # FLUJO 4 - Resultados: obtener audio y transcripción
+    # FLUJO 4 - Resultados
     # ─────────────────────────────────────────────
 
     def get_conversation(self, conversation_id: str) -> dict:
-        """
-        Obtiene el detalle completo de una conversación finalizada.
-        Incluye: transcript, duración, outcome, metadata.
-
-        GET /v1/convai/conversations/{conversation_id}
-        """
+        """GET /v1/convai/conversations/{conversation_id}"""
         url = f"{self.base_url}/convai/conversations/{conversation_id}"
         with httpx.Client(timeout=30, follow_redirects=True) as client:
             resp = client.get(url, headers=self._headers())
@@ -185,12 +149,7 @@ class ElevenLabsService:
             return resp.json()
 
     def get_conversation_audio(self, conversation_id: str) -> bytes:
-        """
-        Descarga el audio de una conversación como bytes MP3.
-        Guardar luego en media/calls/ o S3.
-
-        GET /v1/convai/conversations/{conversation_id}/audio
-        """
+        """GET /v1/convai/conversations/{conversation_id}/audio"""
         url = f"{self.base_url}/convai/conversations/{conversation_id}/audio"
         with httpx.Client(timeout=60, follow_redirects=True) as client:
             resp = client.get(url, headers={"xi-api-key": self.api_key})
@@ -198,23 +157,15 @@ class ElevenLabsService:
             return resp.content
 
     def extract_transcript_text(self, conversation_data: dict) -> str:
-        """
-        Extrae el texto del transcript de la respuesta de la API.
-        ElevenLabs devuelve el transcript como lista de turnos.
-
-        Formato de retorno:
-          "Agente: Hola, le llamo de...\nCliente: Sí, ¿quién habla?"
-        """
-        transcript_lines = []
-        turns = conversation_data.get("transcript", [])
-        for turn in turns:
+        """Convierte el transcript de ElevenLabs a texto plano."""
+        lines = []
+        for turn in conversation_data.get("transcript", []):
             role = "Agente" if turn.get("role") == "agent" else "Cliente"
             text = turn.get("message", "")
             if text:
-                transcript_lines.append(f"{role}: {text}")
-        return "\n".join(transcript_lines)
+                lines.append(f"{role}: {text}")
+        return "\n".join(lines)
 
 
-# Singleton — importar desde cualquier lado con:
-# from apps.calls.elevenlabs_service import elevenlabs_service
+# Singleton
 elevenlabs_service = ElevenLabsService()
