@@ -1,12 +1,5 @@
 """
 apps/calls/elevenlabs_service.py
-
-Servicio de integración con ElevenLabs Conversational AI.
-Maneja los 4 flujos principales:
-  1. Configuración del agente
-  2. CRUD de lotes de llamadas
-  3. Ejecución del proceso de llamadas por lote
-  4. Obtención de resultados (audio + transcripción)
 """
 
 import os
@@ -22,9 +15,10 @@ ELEVENLABS_BASE_URL = "https://api.elevenlabs.io/v1"
 class ElevenLabsService:
 
     def __init__(self):
-        self.api_key = os.getenv("ELEVENLABS_API_KEY", "")
-        self.agent_id = os.getenv("ELEVENLABS_AGENT_ID", "")
-        self.base_url = ELEVENLABS_BASE_URL
+        self.api_key         = os.getenv("ELEVENLABS_API_KEY", "")
+        self.agent_id        = os.getenv("ELEVENLABS_AGENT_ID", "")
+        self.phone_number_id = os.getenv("ELEVENLABS_PHONE_NUMBER_ID", "")
+        self.base_url        = ELEVENLABS_BASE_URL
 
     def _headers(self) -> dict:
         return {
@@ -33,7 +27,7 @@ class ElevenLabsService:
         }
 
     def is_configured(self) -> bool:
-        return bool(self.api_key and self.agent_id)
+        return bool(self.api_key and self.agent_id and self.phone_number_id)
 
     # ─────────────────────────────────────────────
     # FLUJO 1 - Configuración
@@ -101,12 +95,14 @@ class ElevenLabsService:
         """
         if not self.is_configured():
             raise ValueError(
-                "ELEVENLABS_API_KEY o ELEVENLABS_AGENT_ID no configurados."
+                "Faltan variables de entorno: "
+                "ELEVENLABS_API_KEY, ELEVENLABS_AGENT_ID o ELEVENLABS_PHONE_NUMBER_ID"
             )
 
         payload = {
-            "call_name": f"Cobranza {len(recipients)} destinatarios",
-            "agent_id": self.agent_id,
+            "call_name":            f"Cobranza {len(recipients)} destinatarios",
+            "agent_id":             self.agent_id,
+            "agent_phone_number_id": self.phone_number_id,
             "recipients": [
                 {
                     "phone_number": r["phone_number"],
@@ -126,13 +122,12 @@ class ElevenLabsService:
         url = f"{self.base_url}/convai/batch-calling/submit"
         with httpx.Client(timeout=60, follow_redirects=True) as client:
             resp = client.post(url, headers=self._headers(), json=payload)
-            # Mostrar detalle del error si falla
             if resp.is_error:
                 logger.error(f"ElevenLabs error {resp.status_code}: {resp.text}")
             resp.raise_for_status()
             data = resp.json()
 
-        el_batch_id = data.get("batch_id") or data.get("id")
+        el_batch_id = data.get("id")
         logger.info(f"Lote creado: {el_batch_id} ({len(recipients)} destinatarios)")
         return el_batch_id
 
