@@ -86,9 +86,9 @@ class ElevenLabsService:
         """
         Lista todos los lotes de llamadas en ElevenLabs.
 
-        GET /v1/convai/batches
+        GET /v1/convai/batch-calling/submit
         """
-        url = f"{self.base_url}/convai/batches"
+        url = f"{self.base_url}/convai/batch-calling/submit"
         with httpx.Client(timeout=30, follow_redirects=True) as client:
             resp = client.get(url, headers=self._headers())
             resp.raise_for_status()
@@ -99,9 +99,9 @@ class ElevenLabsService:
         Obtiene el estado y detalle de un lote específico.
         Incluye el estado individual de cada llamada dentro del lote.
 
-        GET /v1/convai/batches/{batch_id}
+        GET /v1/convai/batch-calling/submit/{batch_id}
         """
-        url = f"{self.base_url}/convai/batches/{el_batch_id}"
+        url = f"{self.base_url}/convai/batch-calling/submit/{el_batch_id}"
         with httpx.Client(timeout=30, follow_redirects=True) as client:
             resp = client.get(url, headers=self._headers())
             resp.raise_for_status()
@@ -129,7 +129,7 @@ class ElevenLabsService:
 
         Retorna el batch_id de ElevenLabs.
 
-        POST /v1/convai/batches
+        POST /v1/convai/batch-calling/submit
         """
         if not self.is_configured():
             raise ValueError(
@@ -138,31 +138,32 @@ class ElevenLabsService:
             )
 
         payload = {
-            "agent_id": self.agent_id,
-            "call_recipients": [
-                {
-                    "phone_number": r["phone_number"],
-                    "agent_variable_values": {
-                        "name":     r.get("name", "Cliente"),
-                        "amount":   str(r.get("amount", "")),
-                        "currency": r.get("currency", "ARS"),
-                    },
-                }
-                for r in recipients
-            ],
+    "call_name": f"Cobranza batch {len(recipients)} destinatarios",
+    "agent_id": self.agent_id,
+    "recipients": [
+        {
+            "phone_number": r["phone_number"],
+            "dynamic_variables": {
+                "name":     r.get("name", "Cliente"),
+                "amount":   str(r.get("amount", "")),
+                "currency": r.get("currency", "ARS"),
+            },
         }
+        for r in recipients
+    ],
+}
 
         if scheduled_time:
             # ISO 8601: "2025-08-01T14:00:00Z"
             payload["scheduled_time"] = scheduled_time
 
-        url = f"{self.base_url}/convai/batches"
+        url = f"{self.base_url}/convai/batch-calling/submit"
         with httpx.Client(timeout=60, follow_redirects=True) as client:
             resp = client.post(url, headers=self._headers(), json=payload)
             resp.raise_for_status()
             data = resp.json()
 
-        el_batch_id = data.get("batch_id") or data.get("id")
+        el_batch_id = data.get("id")
         logger.info(f"Lote creado en ElevenLabs: {el_batch_id} ({len(recipients)} destinatarios)")
         return el_batch_id
 
