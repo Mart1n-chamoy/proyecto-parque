@@ -106,10 +106,12 @@ class ElevenLabsService:
             "recipients": [
                 {
                     "phone_number": r["phone_number"],
-                    "dynamic_variables": {
-                        "name":     r.get("name", "Cliente"),
-                        "amount":   str(r.get("amount", "")),
-                        "currency": r.get("currency", "ARS"),
+                    "conversation_initiation_client_data": {
+                        "dynamic_variables": {
+                            "name":     r.get("name", "Cliente"),
+                            "amount":   str(r.get("amount", "")),
+                            "currency": r.get("currency", "ARS"),
+                        }
                     },
                 }
                 for r in recipients
