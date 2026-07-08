@@ -1,0 +1,65 @@
+{% extends "dashboard/base.html" %}
+{% block title %}Nueva campaña — Cobranzas IA{% endblock %}
+
+{% block content %}
+<div style="margin-bottom: 24px; display: flex; align-items: center; gap: 12px;">
+  <a href="/" style="color: var(--muted); text-decoration: none; font-size: 13px;">← Volver</a>
+  <h1 style="font-size: 22px; font-weight: 700;">Nueva campaña</h1>
+</div>
+
+<div style="max-width: 600px;">
+  <div class="card">
+    <form method="post" enctype="multipart/form-data" action="/campaigns/new/">
+      {% csrf_token %}
+
+      <div class="form-group">
+        <label>Nombre de la campaña</label>
+        <input type="text" name="name" placeholder="Ej: Cobranzas julio 2026" required>
+      </div>
+
+      <div class="form-group">
+        <label>Archivo CSV o Excel</label>
+        <div class="upload-zone" onclick="document.getElementById('file-input').click()">
+          <p style="font-size: 28px;">📂</p>
+          <p style="font-weight: 500; color: var(--text); margin-top: 8px;">Hacé click para subir el archivo</p>
+          <p>CSV o XLSX — máx. 10 MB</p>
+          <p id="file-name" style="color: var(--accent); margin-top: 8px;"></p>
+        </div>
+        <input type="file" id="file-input" name="file" accept=".csv,.xlsx,.xls"
+               style="display:none" onchange="showFileName(this)" required>
+      </div>
+
+      <div class="card" style="background: var(--bg); margin-bottom: 20px;">
+        <p style="font-size: 12px; color: var(--muted); margin-bottom: 8px;">
+          <strong style="color: var(--text);">Columnas requeridas en el archivo:</strong>
+        </p>
+        <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+          <code style="background: var(--border); padding: 3px 8px; border-radius: 4px; font-size: 12px;">phone_number</code>
+          <code style="background: var(--border); padding: 3px 8px; border-radius: 4px; font-size: 12px;">name</code>
+          <code style="background: var(--border); padding: 3px 8px; border-radius: 4px; font-size: 12px;">amount</code>
+          <span style="color: var(--muted); font-size: 12px; align-self: center;">+ currency (opcional, default: ARS)</span>
+        </div>
+        <p style="font-size: 11px; color: var(--muted); margin-top: 8px;">
+          Ejemplo de phone_number: +5492616410756 (formato E.164 con código de país)
+        </p>
+      </div>
+
+      <div style="display: flex; gap: 12px;">
+        <button type="submit" name="action" value="save" class="btn btn-secondary">
+          Guardar sin lanzar
+        </button>
+        <button type="submit" name="action" value="launch" class="btn btn-primary">
+          🚀 Guardar y llamar ahora
+        </button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<script>
+function showFileName(input) {
+  const label = document.getElementById('file-name');
+  label.textContent = input.files[0]?.name || '';
+}
+</script>
+{% endblock %}

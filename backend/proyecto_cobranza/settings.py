@@ -27,6 +27,7 @@ INSTALLED_APPS = [
     'apps.clients',
     'apps.calls',
     'apps.auth_app',
+    'apps.dashboard',
 ]
 
 MIDDLEWARE = [

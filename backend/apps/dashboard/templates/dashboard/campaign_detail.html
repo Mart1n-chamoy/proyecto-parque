@@ -1,0 +1,154 @@
+{% extends "dashboard/base.html" %}
+{% block title %}{{ batch.name }} — Cobranzas IA{% endblock %}
+
+{% block content %}
+<div style="margin-bottom: 24px; display: flex; align-items: center; justify-content: space-between;">
+  <div style="display: flex; align-items: center; gap: 12px;">
+    <a href="/" style="color: var(--muted); text-decoration: none; font-size: 13px;">← Volver</a>
+    <h1 style="font-size: 22px; font-weight: 700;">{{ batch.name }}</h1>
+    <span class="badge badge-{{ batch.status }}">{{ batch.get_status_display }}</span>
+  </div>
+
+  {% if batch.status == 'pending' %}
+  <form method="post" action="/campaigns/{{ batch.id }}/launch/">
+    {% csrf_token %}
+    <button type="submit" class="btn btn-primary">🚀 Lanzar llamadas</button>
+  </form>
+  {% elif batch.status == 'processing' %}
+  <div style="display: flex; align-items: center; gap: 12px;">
+    <span style="color: var(--muted); font-size: 13px;">Actualizando cada 30s...</span>
+    <button class="btn btn-secondary btn-sm"
+            hx-get="/campaigns/{{ batch.id }}/status/"
+            hx-target="#calls-table"
+            hx-swap="outerHTML"
+            hx-trigger="every 30s">
+      ↻ Actualizar
+    </button>
+  </div>
+  {% endif %}
+</div>
+
+<!-- STATS DEL LOTE -->
+<div class="stats-grid" style="grid-template-columns: repeat(4,1fr);">
+  <div class="stat-card">
+    <div class="stat-label">Total clientes</div>
+    <div class="stat-value">{{ batch.total_clients }}</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-label">Completadas</div>
+    <div class="stat-value green">{{ stats.completed }}</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-label">Fallidas</div>
+    <div class="stat-value red">{{ stats.failed }}</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-label">Pendientes</div>
+    <div class="stat-value">{{ stats.pending }}</div>
+  </div>
+</div>
+
+<!-- TABLA DE LLAMADAS -->
+<div class="card" id="calls-table">
+  <div class="card-header">
+    <span class="card-title">Llamadas del lote</span>
+    {% if batch.elevenlabs_batch_id %}
+    <span style="font-size: 11px; color: var(--muted);">EL ID: {{ batch.elevenlabs_batch_id }}</span>
+    {% endif %}
+  </div>
+
+  {% if calls %}
+  <table>
+    <thead>
+      <tr>
+        <th>Cliente</th>
+        <th>Teléfono</th>
+        <th>Deuda</th>
+        <th>Estado</th>
+        <th>Duración</th>
+        <th>Resultado</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for call in calls %}
+      <tr>
+        <td style="font-weight: 500;">{{ call.client.name }}</td>
+        <td style="color: var(--muted);">{{ call.client.phone }}</td>
+        <td>${{ call.client.debt_amount|default:"-" }}</td>
+        <td><span class="badge badge-{{ call.status }}">{{ call.get_status_display }}</span></td>
+        <td style="color: var(--muted);">
+          {% if call.duration %}{{ call.duration }}s{% else %}—{% endif %}
+        </td>
+        <td style="color: var(--muted); font-size: 12px;">{{ call.outcome|default:"—" }}</td>
+        <td>
+          {% if call.transcript %}
+          <button class="btn btn-secondary btn-sm"
+                  onclick="openTranscript('{{ call.id }}', `{{ call.transcript|escapejs }}`, '{{ call.audio_file }}')">
+            Ver
+          </button>
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <div style="text-align: center; padding: 40px; color: var(--muted);">
+    <p>No hay llamadas registradas todavía.</p>
+  </div>
+  {% endif %}
+</div>
+
+<!-- MODAL TRANSCRIPCIÓN -->
+<div class="modal-overlay" id="modal" onclick="closeModal(event)">
+  <div class="modal">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+      <span class="modal-title">Transcripción</span>
+      <button onclick="document.getElementById('modal').classList.remove('open')"
+              style="background:none; border:none; color:var(--muted); cursor:pointer; font-size:18px;">✕</button>
+    </div>
+    <div id="modal-audio" style="margin-bottom: 16px;"></div>
+    <div class="transcript" id="modal-transcript"></div>
+  </div>
+</div>
+
+<script>
+function openTranscript(callId, transcript, audioFile) {
+  const modal = document.getElementById('modal');
+  const transcriptDiv = document.getElementById('modal-transcript');
+  const audioDiv = document.getElementById('modal-audio');
+
+  // Formatear transcript
+  const lines = transcript.split('\n');
+  transcriptDiv.innerHTML = lines.map(line => {
+    if (line.startsWith('Agente:')) {
+      return `<p class="turn-agent">${line}</p>`;
+    } else if (line.startsWith('Cliente:')) {
+      return `<p class="turn-client">${line}</p>`;
+    }
+    return `<p>${line}</p>`;
+  }).join('');
+
+  // Audio
+  if (audioFile) {
+    audioDiv.innerHTML = `<audio controls style="width:100%"><source src="/media/${audioFile}"></audio>`;
+  } else {
+    audioDiv.innerHTML = '';
+  }
+
+  modal.classList.add('open');
+}
+
+function closeModal(event) {
+  if (event.target === document.getElementById('modal')) {
+    document.getElementById('modal').classList.remove('open');
+  }
+}
+
+// Auto-refresh si el lote está procesando
+{% if batch.status == 'processing' %}
+setTimeout(() => location.reload(), 30000);
+{% endif %}
+</script>
+{% endblock %}

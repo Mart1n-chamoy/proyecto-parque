@@ -1,0 +1,76 @@
+{% extends "dashboard/base.html" %}
+{% block title %}Dashboard — Cobranzas IA{% endblock %}
+
+{% block content %}
+<div style="margin-bottom: 24px;">
+  <h1 style="font-size: 22px; font-weight: 700;">Dashboard</h1>
+  <p style="color: var(--muted); margin-top: 4px;">Resumen del sistema de cobranzas</p>
+</div>
+
+<!-- ESTADÍSTICAS -->
+<div class="stats-grid">
+  <div class="stat-card">
+    <div class="stat-label">Campañas totales</div>
+    <div class="stat-value">{{ stats.total_batches }}</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-label">Llamadas realizadas</div>
+    <div class="stat-value blue">{{ stats.total_calls }}</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-label">Llamadas exitosas</div>
+    <div class="stat-value green">{{ stats.completed_calls }}</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-label">Fallidas</div>
+    <div class="stat-value red">{{ stats.failed_calls }}</div>
+  </div>
+</div>
+
+<!-- ÚLTIMAS CAMPAÑAS -->
+<div class="card">
+  <div class="card-header">
+    <span class="card-title">Últimas campañas</span>
+    <a href="/campaigns/new/" class="btn btn-primary">+ Nueva campaña</a>
+  </div>
+
+  {% if batches %}
+  <table>
+    <thead>
+      <tr>
+        <th>Nombre</th>
+        <th>Clientes</th>
+        <th>Procesados</th>
+        <th>Estado</th>
+        <th>Creado</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for batch in batches %}
+      <tr>
+        <td style="font-weight: 500;">{{ batch.name }}</td>
+        <td>{{ batch.total_clients }}</td>
+        <td>{{ batch.processed_clients }}</td>
+        <td>
+          <span class="badge badge-{{ batch.status }}">
+            {{ batch.get_status_display }}
+          </span>
+        </td>
+        <td style="color: var(--muted);">{{ batch.created_at|date:"d/m/Y H:i" }}</td>
+        <td>
+          <a href="/campaigns/{{ batch.id }}/" class="btn btn-secondary btn-sm">Ver</a>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <div style="text-align: center; padding: 40px; color: var(--muted);">
+    <p style="font-size: 32px; margin-bottom: 12px;">📋</p>
+    <p>No hay campañas todavía.</p>
+    <a href="/campaigns/new/" class="btn btn-primary" style="margin-top: 16px;">Crear primera campaña</a>
+  </div>
+  {% endif %}
+</div>
+{% endblock %}
