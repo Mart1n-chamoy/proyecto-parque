@@ -96,12 +96,17 @@ class CampaignNewView(View):
                 continue
 
             # Obtener o crear cliente
+            name_parts = str(row.get("name", "")).strip().split(" ", 1)
+            first_name = name_parts[0] if name_parts else ""
+            last_name  = name_parts[1] if len(name_parts) > 1 else ""
+            
             client, _ = Client.objects.get_or_create(
                 phone=phone,
                 defaults={
-                    "name":        str(row.get("name", "")).strip(),
-                    "debt_amount": row.get("amount", 0),
-                }
+                            "first_name": first_name,
+                            "last_name":  last_name,
+                            "debt_amount": row.get("amount", 0),
+                        }
             )
             # Actualizar deuda si el cliente ya existía
             client.debt_amount = row.get("amount", client.debt_amount)

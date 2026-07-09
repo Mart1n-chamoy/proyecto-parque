@@ -84,7 +84,7 @@ class BatchStatusView(APIView):
     """
 
     def get(self, request, pk):
-        from apps.calls.models import BatchCall, Call
+        from apps.calls.models import CallBatch, Call
 
         batch = get_object_or_404(BatchCall, pk=pk)
 
@@ -127,7 +127,7 @@ class BatchResultsView(APIView):
     """
 
     def get(self, request, pk):
-        from apps.calls.models import BatchCall, Call
+        from apps.calls.models import CallBatch, Call
 
         batch = get_object_or_404(BatchCall, pk=pk)
         calls = (

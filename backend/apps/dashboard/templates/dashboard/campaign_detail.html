@@ -73,7 +73,7 @@
     <tbody>
       {% for call in calls %}
       <tr>
-        <td style="font-weight: 500;">{{ call.client.name }}</td>
+        <td style="font-weight: 500;">{{ call.client.first_name }} {{ call.client.last_name }}</td>
         <td style="color: var(--muted);">{{ call.client.phone }}</td>
         <td>${{ call.client.debt_amount|default:"-" }}</td>
         <td><span class="badge badge-{{ call.status }}">{{ call.get_status_display }}</span></td>

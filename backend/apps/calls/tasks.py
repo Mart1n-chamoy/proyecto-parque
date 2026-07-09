@@ -35,12 +35,12 @@ def process_call_batch(self, batch_id: int):
         process_call_batch.delay(batch.id)
     """
     # Import acá adentro para evitar import circular con Django
-    from apps.calls.models import BatchCall, Call
+    from apps.calls.models import CallBatch, Call
     from apps.calls.elevenlabs_service import elevenlabs_service
 
     try:
-        batch = BatchCall.objects.get(id=batch_id)
-    except BatchCall.DoesNotExist:
+        batch = CallBatch.objects.get(id=batch_id)
+    except CallBatch.DoesNotExist:
         logger.error(f"BatchCall {batch_id} no encontrado")
         return
 
@@ -65,7 +65,7 @@ def process_call_batch(self, batch_id: int):
             continue
         recipients.append({
             "phone_number": client.phone,   # debe ser formato E.164: +5491155...
-            "name":         client.name,
+            "name": f"{client.first_name} {client.last_name}".strip(),
             "amount":       str(client.debt_amount or ""),
             "currency":     getattr(client, "currency", "ARS"),
             # Guardamos el call.id para matchear cuando lleguen los resultados
@@ -120,7 +120,7 @@ def check_batch_completion():
     from apps.calls.models import BatchCall
     from apps.calls.elevenlabs_service import elevenlabs_service
 
-    batches_en_curso = BatchCall.objects.filter(status="processing")
+    batches_en_curso = CallBatch.objects.filter(status="processing")
 
     if not batches_en_curso.exists():
         logger.debug("check_batch_completion: no hay lotes en curso")
@@ -184,9 +184,9 @@ def fetch_call_results(self, el_conversation_id: str, phone_number: str, batch_i
 
     # Buscar la Call en la DB
     try:
-        batch = BatchCall.objects.get(id=batch_id)
+        batch = CallBatch.objects.get(id=batch_id)
         call  = Call.objects.get(batch=batch, client__phone=phone_number)
-    except (BatchCall.DoesNotExist, Call.DoesNotExist, Call.MultipleObjectsReturned):
+    except (CallBatch.DoesNotExist, Call.DoesNotExist, Call.MultipleObjectsReturned):
         logger.error(
             f"No se encontró Call para batch={batch_id}, phone={phone_number}"
         )
@@ -277,7 +277,7 @@ def retry_failed_call(self, call_id: int):
 
     recipients = [{
         "phone_number": client.phone,
-        "name":         client.name,
+        "name": f"{client.first_name} {client.last_name}".strip(),
         "amount":       str(client.debt_amount or ""),
         "currency":     getattr(client, "currency", "ARS"),
     }]
