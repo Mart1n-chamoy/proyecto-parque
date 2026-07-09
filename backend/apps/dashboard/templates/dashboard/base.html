@@ -231,7 +231,15 @@
   <a href="/" {% if request.path == '/' %}class="active"{% endif %}>Dashboard</a>
   <a href="/campaigns/" {% if '/campaigns' in request.path %}class="active"{% endif %}>Campañas</a>
   <a href="/calls/" {% if '/calls' in request.path %}class="active"{% endif %}>Llamadas</a>
-</nav>
+  <div style="margin-left:auto; display:flex; align-items:center; gap:16px;">
+      <span style="color:var(--muted); font-size:13px;">{{ request.user.username }}</span>
+      <form method="post" action="/logout/" style="margin:0;">
+        {% csrf_token %}
+        <button type="submit" style="background:none; border:none; color:var(--muted);
+                cursor:pointer; font-size:13px; padding:0;">Salir</button>
+      </form>
+    </div>
+  </nav>
 
 <div class="page">
   {% if messages %}

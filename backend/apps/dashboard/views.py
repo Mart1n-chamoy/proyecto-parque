@@ -14,6 +14,7 @@ from django.shortcuts import render, redirect, get_object_or_404
 from django.contrib import messages
 from django.views import View
 from django.http import JsonResponse
+from django.contrib.auth.mixins import LoginRequiredMixin
 
 from apps.calls.models import CallBatch, Call
 from apps.clients.models import Client
@@ -24,7 +25,7 @@ logger = logging.getLogger(__name__)
 REQUIRED_COLUMNS = {"phone_number", "name", "amount"}
 
 
-class DashboardView(View):
+class DashboardView(LoginRequiredMixin,View):
     """GET / — pantalla principal con stats y últimas campañas"""
 
     def get(self, request):
@@ -44,7 +45,7 @@ class DashboardView(View):
         })
 
 
-class CampaignNewView(View):
+class CampaignNewView(LoginRequiredMixin,View):
     """GET/POST /campaigns/new/ — crear campaña y subir CSV"""
 
     def get(self, request):
@@ -132,7 +133,7 @@ class CampaignNewView(View):
         return redirect(f"/campaigns/{batch.id}/")
 
 
-class CampaignDetailView(View):
+class CampaignDetailView(LoginRequiredMixin, View):
     """GET /campaigns/{id}/ — detalle de campaña con llamadas"""
 
     def get(self, request, pk):
@@ -154,7 +155,7 @@ class CampaignDetailView(View):
         })
 
 
-class CampaignLaunchView(View):
+class CampaignLaunchView(LoginRequiredMixin, View):
     """POST /campaigns/{id}/launch/ — lanzar lote a ElevenLabs"""
 
     def post(self, request, pk):
@@ -169,7 +170,7 @@ class CampaignLaunchView(View):
         return redirect(f"/campaigns/{batch.id}/")
 
 
-class CampaignStatusView(View):
+class CampaignStatusView(LoginRequiredMixin, View):
     """GET /campaigns/{id}/status/ — fragmento HTMX con tabla actualizada"""
 
     def get(self, request, pk):
@@ -189,3 +190,45 @@ class CampaignStatusView(View):
                 "pending":   pending,
             },
         })
+
+"""
+Agregar en apps/dashboard/views.py — views de autenticación para el panel web.
+
+Usa sesiones Django (no JWT) para el frontend de templates.
+JWT sigue funcionando para la API REST como estaba.
+"""
+
+from django.contrib.auth import authenticate, login, logout
+from django.shortcuts import render, redirect
+from django.views import View
+
+
+class DashboardLoginView(View):
+    """GET/POST /login/"""
+
+    def get(self, request):
+        if request.user.is_authenticated:
+            return redirect("/")
+        return render(request, "dashboard/login.html")
+
+    def post(self, request):
+        username = request.POST.get("username", "").strip()
+        password = request.POST.get("password", "")
+
+        user = authenticate(request, username=username, password=password)
+        if user is not None:
+            login(request, user)
+            next_url = request.GET.get("next", "/")
+            return redirect(next_url)
+
+        return render(request, "dashboard/login.html", {
+            "error": "Usuario o contraseña incorrectos."
+        })
+
+
+class DashboardLogoutView(View):
+    """POST /logout/"""
+
+    def post(self, request):
+        logout(request)
+        return redirect("/login/")
