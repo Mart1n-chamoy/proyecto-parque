@@ -165,3 +165,5 @@ ELEVENLABS_PHONE_NUMBER_ID = os.environ.get('ELEVENLABS_PHONE_NUMBER_ID', '')
 
 LOGIN_URL = '/login/'
 LOGIN_REDIRECT_URL = '/'
+_csrf_origins = os.environ.get('CSRF_TRUSTED_ORIGINS', '')
+CSRF_TRUSTED_ORIGINS = [x for x in _csrf_origins.split(',') if x]
