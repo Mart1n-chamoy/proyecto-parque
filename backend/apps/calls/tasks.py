@@ -117,7 +117,7 @@ def check_batch_completion():
     Cuando un lote completa, lanza fetch_call_results() para cada
     llamada finalizada.
     """
-    from apps.calls.models import BatchCall
+    from apps.calls.models import CallBatch
     from apps.calls.elevenlabs_service import elevenlabs_service
 
     batches_en_curso = CallBatch.objects.filter(status="processing")
@@ -143,10 +143,11 @@ def check_batch_completion():
         for call_data in calls_data:
             conv_id     = call_data.get("conversation_id")
             call_status = call_data.get("status")
-            phone       = call_data.get("phone_number")
+            phone       = call_data.get("phone_number","")
 
+            if phone and not phone.startswith("+"):
+                phone = "+" + phone
             if call_status == "completed" and conv_id:
-                # Lanzar tarea para bajar audio + transcript de esta llamada
                 fetch_call_results.delay(
                     el_conversation_id=conv_id,
                     phone_number=phone,
@@ -179,13 +180,15 @@ def fetch_call_results(self, el_conversation_id: str, phone_number: str, batch_i
     Busca la Call correspondiente por teléfono + lote, guarda
     el transcript en el campo transcript_text y el audio en media/calls/.
     """
-    from apps.calls.models import Call, BatchCall
+    from apps.calls.models import Call, CallBatch
     from apps.calls.elevenlabs_service import elevenlabs_service
 
     # Buscar la Call en la DB
     try:
         batch = CallBatch.objects.get(id=batch_id)
-        call  = Call.objects.get(batch=batch, client__phone=phone_number)
+        # Buscar con o sin el + al inicio
+        phone_variants = [phone_number, phone_number.lstrip("+")]
+        call  = Call.objects.get(batch=batch, client__phone__in=phone_variants)
     except (CallBatch.DoesNotExist, Call.DoesNotExist, Call.MultipleObjectsReturned):
         logger.error(
             f"No se encontró Call para batch={batch_id}, phone={phone_number}"
@@ -213,11 +216,11 @@ def fetch_call_results(self, el_conversation_id: str, phone_number: str, batch_i
 
         # Actualizar la llamada en DB
         call.elevenlabs_conversation_id = el_conversation_id
-        call.transcript_text = transcript
+        call.transcript = transcript
         call.audio_file      = audio_filename
         call.outcome         = str(outcome)
         call.status          = "completed"
-        call.duration_seconds = conv_data.get("metadata", {}).get("call_duration_secs")
+        call.duration = conv_data.get("metadata", {}).get("call_duration_secs")
         call.completed_at    = timezone.now()
         call.save()
 

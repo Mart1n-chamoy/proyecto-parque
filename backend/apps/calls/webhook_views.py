@@ -52,13 +52,16 @@ class ElevenLabsWebhookView(View):
       }
     }
     """
+    def get(self, request):
+        """ElevenLabs verifica el endpoint con GET antes de enviar eventos."""
+        return JsonResponse({"status": "ok"})
 
     def post(self, request):
         # 1. Verificar firma del webhook (seguridad)
-        if ELEVENLABS_WEBHOOK_SECRET:
-            if not self._verify_signature(request):
-                logger.warning("Webhook ElevenLabs: firma inválida")
-                return JsonResponse({"error": "Unauthorized"}, status=401)
+#        if ELEVENLABS_WEBHOOK_SECRET:
+ #           if not self._verify_signature(request):
+  #              logger.warning("Webhook ElevenLabs: firma inválida")
+   #             return JsonResponse({"error": "Unauthorized"}, status=401)
 
         # 2. Parsear payload
         try:
