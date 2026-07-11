@@ -49,7 +49,7 @@ services:
 
   celery:
     build: ./backend
-    command: celery -A proyecto_cobranza worker -l info --concurrency=4
+    command: sh -c "mkdir -p /app/backend/logs && touch /app/backend/logs/django.log && celery -A proyecto_cobranza worker -l info --concurrency=4"
     env_file: .env
     environment:
       DB_HOST: db
@@ -86,6 +86,19 @@ services:
       - ./nginx/certbot/conf:/etc/letsencrypt
       - ./nginx/certbot/www:/var/www/certbot
     entrypoint: "/bin/sh -c 'trap exit TERM; while :; do certbot renew; sleep 12h & wait $${!}; done;'"
+
+  celery-beat:
+    build: ./backend
+    command: sh -c "mkdir -p /app/backend/logs && touch /app/backend/logs/django.log && celery -A proyecto_cobranza beat -l info"
+    env_file: .env
+    environment:
+      DB_HOST: db
+      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_RESULT_BACKEND: redis://redis:6379/0
+    depends_on:
+      - db
+      - redis
+    restart: unless-stopped
 
 volumes:
   postgres_data:
