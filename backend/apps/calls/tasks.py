@@ -137,7 +137,7 @@ def check_batch_completion():
             continue
 
         el_status = el_batch.get("status", "")
-        calls_data = el_batch.get("call_recipients", [])
+        calls_data = el_batch.get("recipients", el_batch.get("call_recipients", []))
 
         # Procesar cada llamada individual del lote
         for call_data in calls_data:
@@ -157,6 +157,19 @@ def check_batch_completion():
         # Si el lote completo terminó, actualizar el BatchCall
         if el_status in ("completed", "done", "finished"):
             batch.status = "completed"
+            # Asegurarse de disparar fetch para todas las llamadas completadas
+            for call_data in calls_data:
+                conv_id = call_data.get("conversation_id")
+                call_status = call_data.get("status")
+                phone = call_data.get("phone_number", "")
+                if not phone.startswith("+"):
+                    phone = "+" + phone
+                if call_status == "completed" and conv_id:
+                    fetch_call_results.delay(
+                        el_conversation_id=conv_id,
+                        phone_number=phone,
+                        batch_id=batch.id,
+                    )
             batch.completed_at = timezone.now()
             batch.save(update_fields=["status", "completed_at"])
             logger.info(f"BatchCall {batch.id} completado")
