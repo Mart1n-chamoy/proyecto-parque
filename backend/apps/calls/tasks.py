@@ -145,6 +145,10 @@ def check_batch_completion():
             call_status = call_data.get("status")
             phone       = call_data.get("phone_number")
 
+    # Normalizar el número — asegurar que tenga el +
+        if phone and not phone.startswith("+"):
+            phone = "+" + phone
+
             if call_status == "completed" and conv_id:
                 # Lanzar tarea para bajar audio + transcript de esta llamada
                 fetch_call_results.delay(

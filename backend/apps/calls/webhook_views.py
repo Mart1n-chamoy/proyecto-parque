@@ -52,6 +52,9 @@ class ElevenLabsWebhookView(View):
       }
     }
     """
+    def get(self, request):
+        """ElevenLabs verifica el endpoint con GET antes de enviar eventos."""
+        return JsonResponse({"status": "ok"})
 
     def post(self, request):
         # 1. Verificar firma del webhook (seguridad)
