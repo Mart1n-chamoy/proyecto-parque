@@ -145,15 +145,8 @@ def check_batch_completion():
             call_status = call_data.get("status")
             phone       = call_data.get("phone_number","")
 
-<<<<<<< HEAD
-    # Normalizar el número — asegurar que tenga el +
-        if phone and not phone.startswith("+"):
-            phone = "+" + phone
-
-=======
             if phone and not phone.startswith("+"):
                 phone = "+" + phone
->>>>>>> 009dc2362b3eba561f14fdebaafc9a2f7c7c7d68
             if call_status == "completed" and conv_id:
                 fetch_call_results.delay(
                     el_conversation_id=conv_id,
@@ -243,7 +236,9 @@ def fetch_call_results(self, el_conversation_id: str, phone_number: str, batch_i
         )
         if is_voicemail:
             outcome = "voicemail"
+            call_status_override = "failed"
 
+        call_status_override = "completed"
         # Guardar audio en media/calls/{call_id}.mp3
         audio_bytes   = elevenlabs_service.get_conversation_audio(el_conversation_id)
         audio_filename = _save_audio_file(call.id, audio_bytes)
@@ -253,7 +248,7 @@ def fetch_call_results(self, el_conversation_id: str, phone_number: str, batch_i
         call.transcript = transcript
         call.audio_file      = audio_filename
         call.outcome         = str(outcome)
-        call.status          = "completed"
+        call.status          = call_status_override
         call.duration = conv_data.get("metadata", {}).get("call_duration_secs")
         call.completed_at    = timezone.now()
         call.save()
