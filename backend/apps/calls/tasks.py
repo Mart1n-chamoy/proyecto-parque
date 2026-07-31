@@ -230,6 +230,20 @@ def fetch_call_results(self, el_conversation_id: str, phone_number: str, batch_i
         analysis = conv_data.get("analysis", {})
         outcome  = analysis.get("call_successful") or analysis.get("outcome", "unknown")
 
+        # Detectar si fue buzón de voz por el transcript
+        voicemail_keywords = [
+            "contestador", "voicemail", "buzón", "después del tono",
+            "dejar un mensaje", "no disponible", "leave a message", "not available"
+        ]
+        transcript_lower = transcript.lower()
+        summary_lower = (analysis.get("transcript_summary") or "").lower()
+        is_voicemail = (
+            any(kw in transcript_lower for kw in voicemail_keywords) or
+            any(kw in summary_lower for kw in ["voicemail", "contestador", "buzón"])
+        )
+        if is_voicemail:
+            outcome = "voicemail"
+
         # Guardar audio en media/calls/{call_id}.mp3
         audio_bytes   = elevenlabs_service.get_conversation_audio(el_conversation_id)
         audio_filename = _save_audio_file(call.id, audio_bytes)
