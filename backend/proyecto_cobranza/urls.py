@@ -14,7 +14,7 @@ urlpatterns = [
     path('api/calls/', include('apps.calls.urls')),
 
     # Admin y webhooks
-    path('admin/', admin.site.urls),
+    path('gestion-cobranza/', admin.site.urls),
     path('webhooks/elevenlabs/', ElevenLabsWebhookView.as_view()),
 ]
 
