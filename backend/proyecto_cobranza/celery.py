@@ -13,4 +13,8 @@ app.conf.beat_schedule = {
         'task': 'apps.calls.tasks.check_batch_completion',
         'schedule': crontab(minute='*/5'),
     },
+    'retry-failed-calls-daily': {
+        'task': 'apps.calls.tasks.retry_failed_calls_auto',
+        'schedule': crontab(hour='9', minute='0'),
+    },
 }

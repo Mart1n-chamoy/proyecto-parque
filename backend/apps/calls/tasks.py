@@ -328,3 +328,38 @@ def retry_failed_call(self, call_id: int):
     except Exception as exc:
         logger.error(f"Error en reintento de Call {call_id}: {exc}")
         raise self.retry(exc=exc)
+
+
+@shared_task
+def retry_failed_calls_auto():
+    """
+    Tarea diaria (9:00 AM) que reintenta llamadas fallidas o voicemail
+    que aún no fueron reintentadas y tienen más de 24hs.
+    Máximo 1 reintento por llamada.
+    """
+    from apps.calls.models import Call, CallBatch
+    from apps.calls.elevenlabs_service import elevenlabs_service
+    import datetime
+    from django.utils import timezone
+
+    hace_24hs = timezone.now() - datetime.timedelta(hours=24)
+
+    calls_a_reintentar = Call.objects.filter(
+        status="failed",
+        retry_count=0,
+        created_at__lte=hace_24hs,
+    ).select_related("client", "batch")
+
+    total = calls_a_reintentar.count()
+    logger.info(f"retry_failed_calls_auto: {total} llamadas a reintentar")
+
+    for call in calls_a_reintentar:
+        if not call.client.phone:
+            continue
+        try:
+            retry_failed_call.delay(call.id)
+            logger.info(f"Reintento programado para Call {call.id} - {call.client.phone}")
+        except Exception as e:
+            logger.error(f"Error programando reintento para Call {call.id}: {e}")
+
+    return f"Reintentos programados: {total}"
