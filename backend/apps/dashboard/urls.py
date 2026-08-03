@@ -18,4 +18,5 @@ urlpatterns = [
     path('campaigns/<int:pk>/status/', views.CampaignStatusView.as_view(),name='campaign-status'),
     path('campaigns/',               views.DashboardView.as_view(),      name='campaign-list'),
     path('calls/',                   views.DashboardView.as_view(),       name='call-list'),
+    path('campaigns/<int:pk>/export/', views.CampaignExportView.as_view(), name='campaign-export'),
 ]

@@ -232,3 +232,89 @@ class DashboardLogoutView(View):
     def post(self, request):
         logout(request)
         return redirect("/login/")
+
+import csv
+import io
+
+
+class CampaignExportView(LoginRequiredMixin, View):
+    """
+    GET /campaigns/{id}/export/?format=csv
+    GET /campaigns/{id}/export/?format=xlsx
+    """
+
+    def get(self, request, pk):
+        import openpyxl
+        from openpyxl.styles import Font, PatternFill, Alignment
+        from apps.calls.models import CallBatch, Call
+
+        batch = get_object_or_404(CallBatch, pk=pk)
+        calls = Call.objects.filter(batch=batch).select_related("client").order_by("id")
+
+        fmt = request.GET.get("format", "csv")
+
+        headers = ["Cliente", "Teléfono", "Deuda", "Moneda", "Estado", "Resultado", "Duración (seg)", "Transcripción"]
+        rows = []
+        for call in calls:
+            rows.append([
+                (call.client.first_name + " " + (call.client.last_name or "")).strip(),
+                call.client.phone,
+                str(call.client.debt_amount or ""),
+                getattr(call.client, "currency", "ARS"),
+                call.get_status_display(),
+                call.outcome or "",
+                str(call.duration or ""),
+                call.transcript or "",
+            ])
+
+        if fmt == "xlsx":
+            return self._export_xlsx(batch, headers, rows)
+        return self._export_csv(batch, headers, rows)
+
+    def _export_csv(self, batch, headers, rows):
+        from django.http import HttpResponse
+        response = HttpResponse(content_type="text/csv; charset=utf-8")
+        response["Content-Disposition"] = f'attachment; filename="campana_{batch.id}.csv"'
+        response.write("\ufeff")
+        writer = csv.writer(response)
+        writer.writerow(headers)
+        for row in rows:
+            writer.writerow(row)
+        return response
+
+    def _export_xlsx(self, batch, headers, rows):
+        import openpyxl
+        from openpyxl.styles import Font, PatternFill, Alignment
+        from django.http import HttpResponse
+
+        wb = openpyxl.Workbook()
+        ws = wb.active
+        ws.title = f"Campaña {batch.id}"
+
+        header_fill = PatternFill(start_color="1F4788", end_color="1F4788", fill_type="solid")
+        header_font = Font(color="FFFFFF", bold=True)
+
+        for col, h in enumerate(headers, 1):
+            cell = ws.cell(row=1, column=col, value=h)
+            cell.fill = header_fill
+            cell.font = header_font
+            cell.alignment = Alignment(horizontal="center")
+
+        for row_idx, row in enumerate(rows, 2):
+            for col_idx, value in enumerate(row, 1):
+                ws.cell(row=row_idx, column=col_idx, value=value)
+
+        col_widths = [25, 18, 12, 10, 14, 14, 16, 60]
+        for i, width in enumerate(col_widths, 1):
+            ws.column_dimensions[ws.cell(row=1, column=i).column_letter].width = width
+
+        buffer = io.BytesIO()
+        wb.save(buffer)
+        buffer.seek(0)
+
+        response = HttpResponse(
+            buffer.read(),
+            content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        )
+        response["Content-Disposition"] = f'attachment; filename="campana_{batch.id}.xlsx"'
+        return response
