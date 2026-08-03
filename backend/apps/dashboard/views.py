@@ -25,22 +25,63 @@ logger = logging.getLogger(__name__)
 REQUIRED_COLUMNS = {"phone_number", "name", "amount"}
 
 
-class DashboardView(LoginRequiredMixin,View):
-    """GET / — pantalla principal con stats y últimas campañas"""
+class DashboardView(LoginRequiredMixin, View):
+    """GET / — pantalla principal con stats y gráficos"""
 
     def get(self, request):
-        batches = CallBatch.objects.order_by("-created_at")[:10]
+        from django.db.models import Avg, Count
+        from django.utils import timezone
+        from django.db.models.functions import TruncDate
+        import datetime, json
+
+        period = int(request.GET.get("period", 30))
+        since  = timezone.now() - datetime.timedelta(days=period)
+
+        batches         = CallBatch.objects.order_by("-created_at")[:10]
         total_calls     = Call.objects.count()
         completed_calls = Call.objects.filter(status="completed").count()
         failed_calls    = Call.objects.filter(status="failed").count()
+        voicemail_calls = Call.objects.filter(outcome="voicemail").count()
+        failed_only     = max(failed_calls - voicemail_calls, 0)
+        success_rate    = round(completed_calls / total_calls * 100) if total_calls else 0
+
+        dur_qs = (
+            CallBatch.objects
+            .annotate(avg_dur=Avg("calls__duration"))
+            .filter(avg_dur__isnull=False)
+            .order_by("-created_at")[:8]
+        )
+        chart_duracion = {
+            "labels": json.dumps([b.name for b in dur_qs][::-1]),
+            "data":   json.dumps([round(b.avg_dur or 0, 1) for b in dur_qs][::-1]),
+        }
+
+        dias_qs = (
+            Call.objects
+            .filter(created_at__gte=since)
+            .annotate(day=TruncDate("created_at"))
+            .values("day")
+            .annotate(total=Count("id"))
+            .order_by("day")
+        )
+        chart_dias = {
+            "labels": json.dumps([str(d["day"]) for d in dias_qs]),
+            "data":   json.dumps([d["total"] for d in dias_qs]),
+        }
 
         return render(request, "dashboard/index.html", {
-            "batches": batches,
+            "batches":        batches,
+            "period":         period,
+            "chart_duracion": chart_duracion,
+            "chart_dias":     chart_dias,
             "stats": {
-                "total_batches":  CallBatch.objects.count(),
-                "total_calls":    total_calls,
-                "completed_calls": completed_calls,
-                "failed_calls":   failed_calls,
+                "total_batches":     CallBatch.objects.count(),
+                "total_calls":       total_calls,
+                "completed_calls":   completed_calls,
+                "failed_calls":      failed_calls,
+                "voicemail_calls":   voicemail_calls,
+                "failed_only_calls": failed_only,
+                "success_rate":      success_rate,
             },
         })
 
