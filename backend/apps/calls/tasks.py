@@ -384,11 +384,12 @@ def process_whatsapp_batch(self, batch_id: int):
             logger.warning(f"Cliente {client.id} sin teléfono, omitiendo")
             continue
 
-        # Variables del template en orden: nombre, monto (ajustar según el template real)
-        template_params = [
-            f"{client.first_name} {client.last_name}".strip() or "Cliente",
-            str(client.debt_amount or ""),
-        ]
+        # NOTA: plantilla01 y plantilla03 (las únicas aprobadas hoy en Meta)
+        # no tienen variables {{1}}, {{2}}, así que no mandamos template_params.
+        # Cuando exista un template con variables (ej: nombre + monto + vencimiento),
+        # reemplazar esta lista por los valores reales en el orden del template:
+        #   template_params = [f"{client.first_name} {client.last_name}".strip(), str(client.debt_amount or "")]
+        template_params = []
 
         call.status = "in_progress"
         call.started_at = timezone.now()
@@ -463,10 +464,9 @@ def retry_failed_whatsapp(self, call_id: int):
         logger.error(f"CallBatch {batch.id} no tiene whatsapp_template_name configurado")
         return
 
-    template_params = [
-        f"{client.first_name} {client.last_name}".strip() or "Cliente",
-        str(client.debt_amount or ""),
-    ]
+    # NOTA: plantilla01 y plantilla03 no tienen variables. Ver comentario
+    # equivalente en process_whatsapp_batch si agregan un template con {{1}}, {{2}}...
+    template_params = []
 
     try:
         result = elevenlabs_service.send_whatsapp_message(

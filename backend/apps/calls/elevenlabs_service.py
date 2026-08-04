@@ -177,8 +177,15 @@ class ElevenLabsService:
         POST /v1/convai/whatsapp/outbound-message
 
         Envía un mensaje de WhatsApp usando un template aprobado en Meta.
-        template_params: lista de valores para las variables {{1}}, {{2}}, ...
-        del template, en orden. Si el template no tiene variables, dejar [].
+
+        template_params: lista simple de valores en el orden de las
+        variables {{1}}, {{2}}, ... del template (ej: ["Martín", "15000"]).
+        Si el template no tiene variables, pasar [] o None.
+
+        La API de ElevenLabs espera esta lista envuelta en la forma:
+            [{"parameters": [{"text": "Martín"}, {"text": "15000"}]}]
+        Ese envoltorio se arma acá adentro para que quien llama a este
+        método solo tenga que pensar en los valores, no en el esquema.
         """
         if not self.is_whatsapp_configured():
             raise ValueError(
@@ -188,13 +195,19 @@ class ElevenLabsService:
         if not template_name:
             raise ValueError("Falta template_name (debe estar aprobado en Meta)")
 
+        values = template_params or []
+        wrapped_params = (
+            [{"parameters": [{"text": str(v)} for v in values]}]
+            if values else []
+        )
+
         payload = {
             "agent_id":                 self.agent_id,
             "whatsapp_phone_number_id": self.whatsapp_phone_number_id,
             "whatsapp_user_id":         self._whatsapp_user_id(phone_number),
             "template_name":            template_name,
             "template_language_code":   template_language,
-            "template_params":          template_params or [],
+            "template_params":          wrapped_params,
         }
 
         url = f"{self.base_url}/convai/whatsapp/outbound-message"
