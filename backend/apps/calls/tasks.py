@@ -391,6 +391,14 @@ def process_whatsapp_batch(self, batch_id: int):
         #   template_params = [f"{client.first_name} {client.last_name}".strip(), str(client.debt_amount or "")]
         template_params = []
 
+        # Estas sí son necesarias siempre: las usa el first_message/prompt
+        # del agente (mismas variables que en create_batch() para llamadas).
+        dynamic_variables = {
+            "name":     f"{client.first_name} {client.last_name}".strip() or "Cliente",
+            "amount":   str(client.debt_amount or ""),
+            "currency": getattr(client, "currency", "ARS"),
+        }
+
         call.status = "in_progress"
         call.started_at = timezone.now()
         call.save(update_fields=["status", "started_at"])
@@ -401,6 +409,7 @@ def process_whatsapp_batch(self, batch_id: int):
                 template_name=batch.whatsapp_template_name,
                 template_language=batch.whatsapp_template_language or "es",
                 template_params=template_params,
+                dynamic_variables=dynamic_variables,
             )
             call.whatsapp_message_id = result.get("message_id") or result.get("id")
             call.status = "completed"
@@ -468,12 +477,19 @@ def retry_failed_whatsapp(self, call_id: int):
     # equivalente en process_whatsapp_batch si agregan un template con {{1}}, {{2}}...
     template_params = []
 
+    dynamic_variables = {
+        "name":     f"{client.first_name} {client.last_name}".strip() or "Cliente",
+        "amount":   str(client.debt_amount or ""),
+        "currency": getattr(client, "currency", "ARS"),
+    }
+
     try:
         result = elevenlabs_service.send_whatsapp_message(
             phone_number=client.phone,
             template_name=batch.whatsapp_template_name,
             template_language=batch.whatsapp_template_language or "es",
             template_params=template_params,
+            dynamic_variables=dynamic_variables,
         )
         call.whatsapp_message_id = result.get("message_id") or result.get("id")
         call.status = "completed"

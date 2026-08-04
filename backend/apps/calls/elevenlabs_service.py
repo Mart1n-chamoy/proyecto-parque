@@ -172,6 +172,7 @@ class ElevenLabsService:
         template_name: str,
         template_language: str = "es",
         template_params: Optional[list] = None,
+        dynamic_variables: Optional[dict] = None,
     ) -> dict:
         """
         POST /v1/convai/whatsapp/outbound-message
@@ -186,6 +187,12 @@ class ElevenLabsService:
             [{"parameters": [{"text": "Martín"}, {"text": "15000"}]}]
         Ese envoltorio se arma acá adentro para que quien llama a este
         método solo tenga que pensar en los valores, no en el esquema.
+
+        dynamic_variables: variables que necesita el first_message /
+        prompt del agente (ej: name, amount, currency). Son las mismas
+        que se mandan en create_batch() para llamadas telefónicas — si
+        el agente las requiere y no se las pasamos acá, la conversación
+        falla apenas el cliente responde el mensaje.
         """
         if not self.is_whatsapp_configured():
             raise ValueError(
@@ -209,6 +216,11 @@ class ElevenLabsService:
             "template_language_code":   template_language,
             "template_params":          wrapped_params,
         }
+
+        if dynamic_variables:
+            payload["conversation_initiation_client_data"] = {
+                "dynamic_variables": dynamic_variables
+            }
 
         url = f"{self.base_url}/convai/whatsapp/outbound-message"
         with httpx.Client(timeout=30, follow_redirects=True) as client:
