@@ -12,7 +12,24 @@ class CallBatch(models.Model):
         ('failed', _('Fallido')),
     ]
 
+    CHANNEL_CHOICES = [
+        ('call', _('Llamada telefónica')),
+        ('whatsapp', _('WhatsApp')),
+    ]
+
     name = models.CharField(_('Nombre del Lote'), max_length=255)
+    channel = models.CharField(
+        _('Canal'), max_length=20, choices=CHANNEL_CHOICES, default='call',
+        help_text="Canal de contacto usado para este lote: llamada o WhatsApp"
+    )
+    whatsapp_template_name = models.CharField(
+        max_length=200, blank=True, null=True,
+        help_text="Nombre del template de WhatsApp aprobado en Meta (solo si channel='whatsapp')"
+    )
+    whatsapp_template_language = models.CharField(
+        max_length=10, blank=True, null=True, default='es',
+        help_text="Código de idioma del template (ej: es, es_AR)"
+    )
     description = models.TextField(_('Descripción'), blank=True)
     status = models.CharField(_('Estado'), max_length=20, choices=STATUS_CHOICES, default='pending')
     total_clients = models.IntegerField(_('Total de Clientes'), default=0)
@@ -57,6 +74,10 @@ class Call(models.Model):
 
     batch = models.ForeignKey(CallBatch, on_delete=models.CASCADE, related_name='calls')
     client = models.ForeignKey(Client, on_delete=models.CASCADE, related_name='calls')
+    channel = models.CharField(
+        _('Canal'), max_length=20, choices=CallBatch.CHANNEL_CHOICES, default='call',
+        help_text="Canal de esta interacción: llamada o WhatsApp"
+    )
     status = models.CharField(_('Estado'), max_length=20, choices=STATUS_CHOICES, default='pending')
     duration = models.IntegerField(_('Duración (segundos)'), null=True, blank=True)
     transcript = models.TextField(_('Transcripción'), blank=True)
@@ -90,6 +111,10 @@ class Call(models.Model):
     retry_count = models.IntegerField(
         default=0,
         help_text="Cantidad de reintentos realizados"
+    )
+    whatsapp_message_id = models.CharField(
+        max_length=200, blank=True, null=True,
+        help_text="ID del mensaje de WhatsApp devuelto por ElevenLabs (solo channel='whatsapp')"
     )
     completed_at = models.DateTimeField(
         blank=True, null=True

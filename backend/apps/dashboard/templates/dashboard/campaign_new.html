@@ -18,6 +18,35 @@
       </div>
 
       <div class="form-group">
+        <label>Canal de contacto</label>
+        <div style="display: flex; gap: 16px; margin-top: 4px;">
+          <label style="display: flex; align-items: center; gap: 6px; font-weight: 400;">
+            <input type="radio" name="channel" value="call" checked onchange="toggleWhatsappFields()">
+            📞 Llamada telefónica
+          </label>
+          <label style="display: flex; align-items: center; gap: 6px; font-weight: 400;">
+            <input type="radio" name="channel" value="whatsapp" onchange="toggleWhatsappFields()">
+            💬 WhatsApp
+          </label>
+        </div>
+      </div>
+
+      <div id="whatsapp-fields" style="display: none;">
+        <div class="form-group">
+          <label>Template de WhatsApp (aprobado en Meta)</label>
+          <input type="text" name="whatsapp_template_name" placeholder="Ej: plantilla01">
+          <p style="font-size: 11px; color: var(--muted); margin-top: 4px;">
+            Debe coincidir exactamente con el nombre del template aprobado en el
+            Gestor de WhatsApp de Meta (business.facebook.com).
+          </p>
+        </div>
+        <div class="form-group">
+          <label>Idioma del template</label>
+          <input type="text" name="whatsapp_template_language" value="es" placeholder="es">
+        </div>
+      </div>
+
+      <div class="form-group">
         <label>Archivo CSV o Excel</label>
         <div class="upload-zone" onclick="document.getElementById('file-input').click()">
           <p style="font-size: 28px;">📂</p>
@@ -48,7 +77,7 @@
         <button type="submit" name="action" value="save" class="btn btn-secondary">
           Guardar sin lanzar
         </button>
-        <button type="submit" name="action" value="launch" class="btn btn-primary">
+        <button type="submit" name="action" value="launch" class="btn btn-primary" id="launch-btn">
           🚀 Guardar y llamar ahora
         </button>
       </div>
@@ -60,6 +89,17 @@
 function showFileName(input) {
   const label = document.getElementById('file-name');
   label.textContent = input.files[0]?.name || '';
+}
+
+function toggleWhatsappFields() {
+  const isWhatsapp = document.querySelector('input[name="channel"]:checked').value === 'whatsapp';
+  const fields = document.getElementById('whatsapp-fields');
+  const templateInput = fields.querySelector('input[name="whatsapp_template_name"]');
+  const launchBtn = document.getElementById('launch-btn');
+
+  fields.style.display = isWhatsapp ? 'block' : 'none';
+  templateInput.required = isWhatsapp;
+  launchBtn.textContent = isWhatsapp ? '🚀 Guardar y enviar por WhatsApp' : '🚀 Guardar y llamar ahora';
 }
 </script>
 {% endblock %}

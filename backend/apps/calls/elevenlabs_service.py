@@ -18,6 +18,7 @@ class ElevenLabsService:
         self.api_key         = os.getenv("ELEVENLABS_API_KEY", "")
         self.agent_id        = os.getenv("ELEVENLABS_AGENT_ID", "")
         self.phone_number_id = os.getenv("ELEVENLABS_PHONE_NUMBER_ID", "")
+        self.whatsapp_phone_number_id = os.getenv("ELEVENLABS_WHATSAPP_PHONE_NUMBER_ID", "")
         self.base_url        = ELEVENLABS_BASE_URL
 
     def _headers(self) -> dict:
@@ -28,6 +29,9 @@ class ElevenLabsService:
 
     def is_configured(self) -> bool:
         return bool(self.api_key and self.agent_id and self.phone_number_id)
+
+    def is_whatsapp_configured(self) -> bool:
+        return bool(self.api_key and self.agent_id and self.whatsapp_phone_number_id)
 
     # ─────────────────────────────────────────────
     # FLUJO 1 - Configuración
@@ -152,6 +156,80 @@ class ElevenLabsService:
             resp = client.get(url, headers={"xi-api-key": self.api_key})
             resp.raise_for_status()
             return resp.content
+
+    # ─────────────────────────────────────────────
+    # FLUJO 5 - WhatsApp
+    # ─────────────────────────────────────────────
+
+    @staticmethod
+    def _whatsapp_user_id(phone_number: str) -> str:
+        """ElevenLabs espera el número sin el '+' inicial."""
+        return phone_number.lstrip("+").strip()
+
+    def send_whatsapp_message(
+        self,
+        phone_number: str,
+        template_name: str,
+        template_language: str = "es",
+        template_params: Optional[list] = None,
+    ) -> dict:
+        """
+        POST /v1/convai/whatsapp/outbound-message
+
+        Envía un mensaje de WhatsApp usando un template aprobado en Meta.
+        template_params: lista de valores para las variables {{1}}, {{2}}, ...
+        del template, en orden. Si el template no tiene variables, dejar [].
+        """
+        if not self.is_whatsapp_configured():
+            raise ValueError(
+                "Faltan variables de entorno: ELEVENLABS_API_KEY, "
+                "ELEVENLABS_AGENT_ID o ELEVENLABS_WHATSAPP_PHONE_NUMBER_ID"
+            )
+        if not template_name:
+            raise ValueError("Falta template_name (debe estar aprobado en Meta)")
+
+        payload = {
+            "agent_id":                 self.agent_id,
+            "whatsapp_phone_number_id": self.whatsapp_phone_number_id,
+            "whatsapp_user_id":         self._whatsapp_user_id(phone_number),
+            "template_name":            template_name,
+            "template_language_code":   template_language,
+            "template_params":          template_params or [],
+        }
+
+        url = f"{self.base_url}/convai/whatsapp/outbound-message"
+        with httpx.Client(timeout=30, follow_redirects=True) as client:
+            resp = client.post(url, headers=self._headers(), json=payload)
+            if resp.is_error:
+                logger.error(f"ElevenLabs WhatsApp (mensaje) error {resp.status_code}: {resp.text}")
+            resp.raise_for_status()
+            return resp.json()
+
+    def send_whatsapp_call(self, phone_number: str) -> dict:
+        """
+        POST /v1/convai/whatsapp/outbound-call
+
+        Inicia una llamada de voz sobre WhatsApp (no requiere template).
+        """
+        if not self.is_whatsapp_configured():
+            raise ValueError(
+                "Faltan variables de entorno: ELEVENLABS_API_KEY, "
+                "ELEVENLABS_AGENT_ID o ELEVENLABS_WHATSAPP_PHONE_NUMBER_ID"
+            )
+
+        payload = {
+            "agent_id":                 self.agent_id,
+            "whatsapp_phone_number_id": self.whatsapp_phone_number_id,
+            "whatsapp_user_id":         self._whatsapp_user_id(phone_number),
+        }
+
+        url = f"{self.base_url}/convai/whatsapp/outbound-call"
+        with httpx.Client(timeout=30, follow_redirects=True) as client:
+            resp = client.post(url, headers=self._headers(), json=payload)
+            if resp.is_error:
+                logger.error(f"ElevenLabs WhatsApp (llamada) error {resp.status_code}: {resp.text}")
+            resp.raise_for_status()
+            return resp.json()
 
     def extract_transcript_text(self, conversation_data: dict) -> str:
         """Convierte el transcript de ElevenLabs a texto plano."""

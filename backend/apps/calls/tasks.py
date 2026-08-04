@@ -330,6 +330,168 @@ def retry_failed_call(self, call_id: int):
         raise self.retry(exc=exc)
 
 
+# ─────────────────────────────────────────────────────────────────
+# TAREA 5: Enviar lote de mensajes de WhatsApp
+# ─────────────────────────────────────────────────────────────────
+
+@shared_task(bind=True, max_retries=2, default_retry_delay=60)
+def process_whatsapp_batch(self, batch_id: int):
+    """
+    Envía un mensaje de WhatsApp (con template aprobado en Meta) a cada
+    cliente del lote. A diferencia de las llamadas, el envío de WhatsApp
+    es síncrono por destinatario (no hay un "batch job" en ElevenLabs
+    para WhatsApp), así que este task resuelve el lote completo.
+
+    Llamar desde la view con:
+        process_whatsapp_batch.delay(batch.id)
+    """
+    from apps.calls.models import CallBatch, Call
+    from apps.calls.elevenlabs_service import elevenlabs_service
+
+    try:
+        batch = CallBatch.objects.get(id=batch_id)
+    except CallBatch.DoesNotExist:
+        logger.error(f"CallBatch {batch_id} no encontrado")
+        return
+
+    if batch.channel != "whatsapp":
+        logger.warning(f"CallBatch {batch_id} no es de canal whatsapp (es '{batch.channel}')")
+        return
+
+    if not batch.whatsapp_template_name:
+        logger.error(f"CallBatch {batch_id} no tiene whatsapp_template_name configurado")
+        batch.status = "failed"
+        batch.save(update_fields=["status"])
+        return
+
+    calls = Call.objects.filter(batch=batch, channel="whatsapp").select_related("client")
+
+    if not calls.exists():
+        logger.error(f"CallBatch {batch_id} no tiene mensajes de WhatsApp asociados")
+        batch.status = "failed"
+        batch.save(update_fields=["status"])
+        return
+
+    batch.status = "processing"
+    batch.started_at = timezone.now()
+    batch.save(update_fields=["status", "started_at"])
+
+    sent, failed = 0, 0
+
+    for call in calls:
+        client = call.client
+        if not client.phone:
+            logger.warning(f"Cliente {client.id} sin teléfono, omitiendo")
+            continue
+
+        # Variables del template en orden: nombre, monto (ajustar según el template real)
+        template_params = [
+            f"{client.first_name} {client.last_name}".strip() or "Cliente",
+            str(client.debt_amount or ""),
+        ]
+
+        call.status = "in_progress"
+        call.started_at = timezone.now()
+        call.save(update_fields=["status", "started_at"])
+
+        try:
+            result = elevenlabs_service.send_whatsapp_message(
+                phone_number=client.phone,
+                template_name=batch.whatsapp_template_name,
+                template_language=batch.whatsapp_template_language or "es",
+                template_params=template_params,
+            )
+            call.whatsapp_message_id = result.get("message_id") or result.get("id")
+            call.status = "completed"
+            call.outcome = "sent"
+            call.completed_at = timezone.now()
+            call.save(update_fields=[
+                "whatsapp_message_id", "status", "outcome", "completed_at"
+            ])
+            sent += 1
+        except Exception as exc:
+            logger.error(f"Error enviando WhatsApp a {client.phone}: {exc}")
+            call.status = "failed"
+            call.outcome = "send_error"
+            call.error_message = str(exc)
+            call.completed_at = timezone.now()
+            call.save(update_fields=[
+                "status", "outcome", "error_message", "completed_at"
+            ])
+            failed += 1
+
+    batch.status = "completed"
+    batch.processed_clients = sent + failed
+    batch.completed_at = timezone.now()
+    batch.save(update_fields=["status", "processed_clients", "completed_at"])
+
+    logger.info(
+        f"CallBatch {batch_id} (whatsapp) finalizado. Enviados: {sent}, fallidos: {failed}"
+    )
+    return {"sent": sent, "failed": failed}
+
+
+# ─────────────────────────────────────────────────────────────────
+# TAREA 6: Reintentar un mensaje de WhatsApp fallido
+# ─────────────────────────────────────────────────────────────────
+
+@shared_task(bind=True, max_retries=3, default_retry_delay=300)
+def retry_failed_whatsapp(self, call_id: int):
+    """
+    Reintenta el envío de un mensaje de WhatsApp que falló.
+
+    Llamar desde la view /api/calls/{id}/retry/ con:
+        retry_failed_whatsapp.delay(call.id)
+    """
+    from apps.calls.models import Call
+    from apps.calls.elevenlabs_service import elevenlabs_service
+
+    try:
+        call = Call.objects.select_related("client", "batch").get(id=call_id)
+    except Call.DoesNotExist:
+        logger.error(f"Call {call_id} no encontrada para retry de WhatsApp")
+        return
+
+    client = call.client
+    batch = call.batch
+
+    if not client.phone:
+        logger.error(f"Cliente {client.id} no tiene teléfono, no se puede reintentar")
+        return
+
+    if not batch.whatsapp_template_name:
+        logger.error(f"CallBatch {batch.id} no tiene whatsapp_template_name configurado")
+        return
+
+    template_params = [
+        f"{client.first_name} {client.last_name}".strip() or "Cliente",
+        str(client.debt_amount or ""),
+    ]
+
+    try:
+        result = elevenlabs_service.send_whatsapp_message(
+            phone_number=client.phone,
+            template_name=batch.whatsapp_template_name,
+            template_language=batch.whatsapp_template_language or "es",
+            template_params=template_params,
+        )
+        call.whatsapp_message_id = result.get("message_id") or result.get("id")
+        call.status = "completed"
+        call.outcome = "sent"
+        call.retry_count = (call.retry_count or 0) + 1
+        call.completed_at = timezone.now()
+        call.save(update_fields=[
+            "whatsapp_message_id", "status", "outcome", "retry_count", "completed_at"
+        ])
+        logger.info(f"Reintento de WhatsApp Call {call_id} exitoso")
+    except Exception as exc:
+        logger.error(f"Error en reintento de WhatsApp Call {call_id}: {exc}")
+        call.retry_count = (call.retry_count or 0) + 1
+        call.error_message = str(exc)
+        call.save(update_fields=["retry_count", "error_message"])
+        raise self.retry(exc=exc)
+
+
 @shared_task
 def retry_failed_calls_auto():
     """
@@ -357,8 +519,11 @@ def retry_failed_calls_auto():
         if not call.client.phone:
             continue
         try:
-            retry_failed_call.delay(call.id)
-            logger.info(f"Reintento programado para Call {call.id} - {call.client.phone}")
+            if call.channel == "whatsapp":
+                retry_failed_whatsapp.delay(call.id)
+            else:
+                retry_failed_call.delay(call.id)
+            logger.info(f"Reintento programado para Call {call.id} ({call.channel}) - {call.client.phone}")
         except Exception as e:
             logger.error(f"Error programando reintento para Call {call.id}: {e}")
 

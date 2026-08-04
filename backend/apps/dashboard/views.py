@@ -18,7 +18,7 @@ from django.contrib.auth.mixins import LoginRequiredMixin
 
 from apps.calls.models import CallBatch, Call
 from apps.clients.models import Client
-from apps.calls.tasks import process_call_batch
+from apps.calls.tasks import process_call_batch, process_whatsapp_batch
 
 logger = logging.getLogger(__name__)
 
@@ -93,9 +93,12 @@ class CampaignNewView(LoginRequiredMixin,View):
         return render(request, "dashboard/campaign_new.html")
 
     def post(self, request):
-        name   = request.POST.get("name", "").strip()
-        action = request.POST.get("action", "save")
-        file   = request.FILES.get("file")
+        name    = request.POST.get("name", "").strip()
+        action  = request.POST.get("action", "save")
+        file    = request.FILES.get("file")
+        channel = request.POST.get("channel", "call")
+        whatsapp_template_name     = request.POST.get("whatsapp_template_name", "").strip()
+        whatsapp_template_language = request.POST.get("whatsapp_template_language", "es").strip() or "es"
 
         if not name:
             messages.error(request, "El nombre de la campaña es obligatorio.")
@@ -103,6 +106,10 @@ class CampaignNewView(LoginRequiredMixin,View):
 
         if not file:
             messages.error(request, "Debés subir un archivo CSV o Excel.")
+            return render(request, "dashboard/campaign_new.html")
+
+        if channel == "whatsapp" and not whatsapp_template_name:
+            messages.error(request, "Elegí un template de WhatsApp aprobado en Meta.")
             return render(request, "dashboard/campaign_new.html")
 
         # Leer archivo
@@ -128,6 +135,9 @@ class CampaignNewView(LoginRequiredMixin,View):
             name=name,
             status="pending",
             total_clients=len(df),
+            channel=channel,
+            whatsapp_template_name=whatsapp_template_name if channel == "whatsapp" else None,
+            whatsapp_template_language=whatsapp_template_language if channel == "whatsapp" else None,
         )
 
         # Crear clientes y llamadas
@@ -158,18 +168,24 @@ class CampaignNewView(LoginRequiredMixin,View):
                 batch=batch,
                 client=client,
                 status="pending",
+                channel=channel,
             )
             calls_created += 1
 
         batch.total_clients = calls_created
         batch.save(update_fields=["total_clients"])
 
-        messages.success(request, f"Campaña creada con {calls_created} clientes.")
+        canal_label = "WhatsApp" if channel == "whatsapp" else "llamadas"
+        messages.success(request, f"Campaña creada con {calls_created} clientes ({canal_label}).")
 
-        # Si eligieron lanzar ahora, encolar la tarea Celery
+        # Si eligieron lanzar ahora, encolar la tarea Celery según el canal
         if action == "launch":
-            process_call_batch.delay(batch.id)
-            messages.success(request, "Las llamadas se están iniciando en background.")
+            if channel == "whatsapp":
+                process_whatsapp_batch.delay(batch.id)
+                messages.success(request, "Los mensajes de WhatsApp se están enviando en background.")
+            else:
+                process_call_batch.delay(batch.id)
+                messages.success(request, "Las llamadas se están iniciando en background.")
 
         return redirect(f"/campaigns/{batch.id}/")
 
@@ -206,8 +222,12 @@ class CampaignLaunchView(LoginRequiredMixin, View):
             messages.error(request, f"El lote no se puede lanzar en estado '{batch.status}'.")
             return redirect(f"/campaigns/{batch.id}/")
 
-        process_call_batch.delay(batch.id)
-        messages.success(request, "Llamadas iniciadas. Los resultados se actualizarán automáticamente.")
+        if batch.channel == "whatsapp":
+            process_whatsapp_batch.delay(batch.id)
+            messages.success(request, "Mensajes de WhatsApp iniciados. Los resultados se actualizarán automáticamente.")
+        else:
+            process_call_batch.delay(batch.id)
+            messages.success(request, "Llamadas iniciadas. Los resultados se actualizarán automáticamente.")
         return redirect(f"/campaigns/{batch.id}/")
 
 

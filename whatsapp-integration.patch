@@ -1,0 +1,648 @@
+diff --git a/.env.example b/.env.example
+index 570fbff..0f12a54 100644
+--- a/.env.example
++++ b/.env.example
+@@ -15,6 +15,9 @@ DB_PORT=5432
+ 
+ # ElevenLabs
+ ELEVENLABS_API_KEY=your-elevenlabs-api-key
++ELEVENLABS_AGENT_ID=your-elevenlabs-agent-id
++ELEVENLABS_PHONE_NUMBER_ID=your-elevenlabs-phone-number-id
++ELEVENLABS_WHATSAPP_PHONE_NUMBER_ID=950693464804211
+ 
+ # CORS
+ CORS_ALLOWED_ORIGINS=http://localhost:3000,http://localhost:8000,http://localhost:8080
+diff --git a/backend/.env.example b/backend/.env.example
+index f2569cb..18d1a09 100644
+--- a/backend/.env.example
++++ b/backend/.env.example
+@@ -13,6 +13,9 @@ DB_PORT=5432
+ 
+ # ElevenLabs
+ ELEVENLABS_API_KEY=your-elevenlabs-api-key
++ELEVENLABS_AGENT_ID=your-elevenlabs-agent-id
++ELEVENLABS_PHONE_NUMBER_ID=your-elevenlabs-phone-number-id
++ELEVENLABS_WHATSAPP_PHONE_NUMBER_ID=950693464804211
+ 
+ # CORS
+ CORS_ALLOWED_ORIGINS=http://localhost:3000,http://localhost:8000,http://localhost:8080
+diff --git a/backend/apps/calls/admin.py b/backend/apps/calls/admin.py
+index b5d28c3..b7e848a 100644
+--- a/backend/apps/calls/admin.py
++++ b/backend/apps/calls/admin.py
+@@ -4,16 +4,16 @@ from .models import CallBatch, Call
+ 
+ @admin.register(CallBatch)
+ class CallBatchAdmin(admin.ModelAdmin):
+-    list_display = ('name', 'status', 'total_clients', 'processed_clients', 'created_at')
+-    list_filter = ('status', 'created_at')
++    list_display = ('name', 'channel', 'status', 'total_clients', 'processed_clients', 'created_at')
++    list_filter = ('channel', 'status', 'created_at')
+     search_fields = ('name', 'description')
+     readonly_fields = ('created_at', 'started_at', 'completed_at')
+ 
+ 
+ @admin.register(Call)
+ class CallAdmin(admin.ModelAdmin):
+-    list_display = ('get_client_phone', 'status', 'duration', 'created_at')
+-    list_filter = ('status', 'batch', 'created_at')
++    list_display = ('get_client_phone', 'channel', 'status', 'duration', 'outcome', 'created_at')
++    list_filter = ('channel', 'status', 'batch', 'created_at')
+     search_fields = ('client__phone', 'batch__name')
+     readonly_fields = ('created_at', 'started_at', 'completed_at')
+ 
+diff --git a/backend/apps/calls/elevenlabs_service.py b/backend/apps/calls/elevenlabs_service.py
+index ba5737b..0c3be6e 100644
+--- a/backend/apps/calls/elevenlabs_service.py
++++ b/backend/apps/calls/elevenlabs_service.py
+@@ -18,6 +18,7 @@ class ElevenLabsService:
+         self.api_key         = os.getenv("ELEVENLABS_API_KEY", "")
+         self.agent_id        = os.getenv("ELEVENLABS_AGENT_ID", "")
+         self.phone_number_id = os.getenv("ELEVENLABS_PHONE_NUMBER_ID", "")
++        self.whatsapp_phone_number_id = os.getenv("ELEVENLABS_WHATSAPP_PHONE_NUMBER_ID", "")
+         self.base_url        = ELEVENLABS_BASE_URL
+ 
+     def _headers(self) -> dict:
+@@ -29,6 +30,9 @@ class ElevenLabsService:
+     def is_configured(self) -> bool:
+         return bool(self.api_key and self.agent_id and self.phone_number_id)
+ 
++    def is_whatsapp_configured(self) -> bool:
++        return bool(self.api_key and self.agent_id and self.whatsapp_phone_number_id)
++
+     # ─────────────────────────────────────────────
+     # FLUJO 1 - Configuración
+     # ─────────────────────────────────────────────
+@@ -153,6 +157,80 @@ class ElevenLabsService:
+             resp.raise_for_status()
+             return resp.content
+ 
++    # ─────────────────────────────────────────────
++    # FLUJO 5 - WhatsApp
++    # ─────────────────────────────────────────────
++
++    @staticmethod
++    def _whatsapp_user_id(phone_number: str) -> str:
++        """ElevenLabs espera el número sin el '+' inicial."""
++        return phone_number.lstrip("+").strip()
++
++    def send_whatsapp_message(
++        self,
++        phone_number: str,
++        template_name: str,
++        template_language: str = "es",
++        template_params: Optional[list] = None,
++    ) -> dict:
++        """
++        POST /v1/convai/whatsapp/outbound-message
++
++        Envía un mensaje de WhatsApp usando un template aprobado en Meta.
++        template_params: lista de valores para las variables {{1}}, {{2}}, ...
++        del template, en orden. Si el template no tiene variables, dejar [].
++        """
++        if not self.is_whatsapp_configured():
++            raise ValueError(
++                "Faltan variables de entorno: ELEVENLABS_API_KEY, "
++                "ELEVENLABS_AGENT_ID o ELEVENLABS_WHATSAPP_PHONE_NUMBER_ID"
++            )
++        if not template_name:
++            raise ValueError("Falta template_name (debe estar aprobado en Meta)")
++
++        payload = {
++            "agent_id":                 self.agent_id,
++            "whatsapp_phone_number_id": self.whatsapp_phone_number_id,
++            "whatsapp_user_id":         self._whatsapp_user_id(phone_number),
++            "template_name":            template_name,
++            "template_language_code":   template_language,
++            "template_params":          template_params or [],
++        }
++
++        url = f"{self.base_url}/convai/whatsapp/outbound-message"
++        with httpx.Client(timeout=30, follow_redirects=True) as client:
++            resp = client.post(url, headers=self._headers(), json=payload)
++            if resp.is_error:
++                logger.error(f"ElevenLabs WhatsApp (mensaje) error {resp.status_code}: {resp.text}")
++            resp.raise_for_status()
++            return resp.json()
++
++    def send_whatsapp_call(self, phone_number: str) -> dict:
++        """
++        POST /v1/convai/whatsapp/outbound-call
++
++        Inicia una llamada de voz sobre WhatsApp (no requiere template).
++        """
++        if not self.is_whatsapp_configured():
++            raise ValueError(
++                "Faltan variables de entorno: ELEVENLABS_API_KEY, "
++                "ELEVENLABS_AGENT_ID o ELEVENLABS_WHATSAPP_PHONE_NUMBER_ID"
++            )
++
++        payload = {
++            "agent_id":                 self.agent_id,
++            "whatsapp_phone_number_id": self.whatsapp_phone_number_id,
++            "whatsapp_user_id":         self._whatsapp_user_id(phone_number),
++        }
++
++        url = f"{self.base_url}/convai/whatsapp/outbound-call"
++        with httpx.Client(timeout=30, follow_redirects=True) as client:
++            resp = client.post(url, headers=self._headers(), json=payload)
++            if resp.is_error:
++                logger.error(f"ElevenLabs WhatsApp (llamada) error {resp.status_code}: {resp.text}")
++            resp.raise_for_status()
++            return resp.json()
++
+     def extract_transcript_text(self, conversation_data: dict) -> str:
+         """Convierte el transcript de ElevenLabs a texto plano."""
+         lines = []
+diff --git a/backend/apps/calls/migrations/0004_call_channel_call_whatsapp_message_id_and_more.py b/backend/apps/calls/migrations/0004_call_channel_call_whatsapp_message_id_and_more.py
+new file mode 100644
+index 0000000..06781cc
+--- /dev/null
++++ b/backend/apps/calls/migrations/0004_call_channel_call_whatsapp_message_id_and_more.py
+@@ -0,0 +1,38 @@
++# Generated by Django 4.2.14 on 2026-08-04 00:00
++
++from django.db import migrations, models
++
++
++class Migration(migrations.Migration):
++
++    dependencies = [
++        ('calls', '0003_call_duration_seconds_call_transcript_text_and_more'),
++    ]
++
++    operations = [
++        migrations.AddField(
++            model_name='call',
++            name='channel',
++            field=models.CharField(choices=[('call', 'Llamada telefónica'), ('whatsapp', 'WhatsApp')], default='call', help_text='Canal de esta interacción: llamada o WhatsApp', max_length=20, verbose_name='Canal'),
++        ),
++        migrations.AddField(
++            model_name='call',
++            name='whatsapp_message_id',
++            field=models.CharField(blank=True, help_text="ID del mensaje de WhatsApp devuelto por ElevenLabs (solo channel='whatsapp')", max_length=200, null=True),
++        ),
++        migrations.AddField(
++            model_name='callbatch',
++            name='channel',
++            field=models.CharField(choices=[('call', 'Llamada telefónica'), ('whatsapp', 'WhatsApp')], default='call', help_text='Canal de contacto usado para este lote: llamada o WhatsApp', max_length=20, verbose_name='Canal'),
++        ),
++        migrations.AddField(
++            model_name='callbatch',
++            name='whatsapp_template_language',
++            field=models.CharField(blank=True, default='es', help_text='Código de idioma del template (ej: es, es_AR)', max_length=10, null=True),
++        ),
++        migrations.AddField(
++            model_name='callbatch',
++            name='whatsapp_template_name',
++            field=models.CharField(blank=True, help_text="Nombre del template de WhatsApp aprobado en Meta (solo si channel='whatsapp')", max_length=200, null=True),
++        ),
++    ]
+diff --git a/backend/apps/calls/models.py b/backend/apps/calls/models.py
+index 73792cc..e751c0b 100644
+--- a/backend/apps/calls/models.py
++++ b/backend/apps/calls/models.py
+@@ -12,7 +12,24 @@ class CallBatch(models.Model):
+         ('failed', _('Fallido')),
+     ]
+ 
++    CHANNEL_CHOICES = [
++        ('call', _('Llamada telefónica')),
++        ('whatsapp', _('WhatsApp')),
++    ]
++
+     name = models.CharField(_('Nombre del Lote'), max_length=255)
++    channel = models.CharField(
++        _('Canal'), max_length=20, choices=CHANNEL_CHOICES, default='call',
++        help_text="Canal de contacto usado para este lote: llamada o WhatsApp"
++    )
++    whatsapp_template_name = models.CharField(
++        max_length=200, blank=True, null=True,
++        help_text="Nombre del template de WhatsApp aprobado en Meta (solo si channel='whatsapp')"
++    )
++    whatsapp_template_language = models.CharField(
++        max_length=10, blank=True, null=True, default='es',
++        help_text="Código de idioma del template (ej: es, es_AR)"
++    )
+     description = models.TextField(_('Descripción'), blank=True)
+     status = models.CharField(_('Estado'), max_length=20, choices=STATUS_CHOICES, default='pending')
+     total_clients = models.IntegerField(_('Total de Clientes'), default=0)
+@@ -57,6 +74,10 @@ class Call(models.Model):
+ 
+     batch = models.ForeignKey(CallBatch, on_delete=models.CASCADE, related_name='calls')
+     client = models.ForeignKey(Client, on_delete=models.CASCADE, related_name='calls')
++    channel = models.CharField(
++        _('Canal'), max_length=20, choices=CallBatch.CHANNEL_CHOICES, default='call',
++        help_text="Canal de esta interacción: llamada o WhatsApp"
++    )
+     status = models.CharField(_('Estado'), max_length=20, choices=STATUS_CHOICES, default='pending')
+     duration = models.IntegerField(_('Duración (segundos)'), null=True, blank=True)
+     transcript = models.TextField(_('Transcripción'), blank=True)
+@@ -91,6 +112,10 @@ class Call(models.Model):
+         default=0,
+         help_text="Cantidad de reintentos realizados"
+     )
++    whatsapp_message_id = models.CharField(
++        max_length=200, blank=True, null=True,
++        help_text="ID del mensaje de WhatsApp devuelto por ElevenLabs (solo channel='whatsapp')"
++    )
+     completed_at = models.DateTimeField(
+         blank=True, null=True
+     )
+diff --git a/backend/apps/calls/tasks.py b/backend/apps/calls/tasks.py
+index 2286e4f..a11fd77 100644
+--- a/backend/apps/calls/tasks.py
++++ b/backend/apps/calls/tasks.py
+@@ -330,6 +330,168 @@ def retry_failed_call(self, call_id: int):
+         raise self.retry(exc=exc)
+ 
+ 
++# ─────────────────────────────────────────────────────────────────
++# TAREA 5: Enviar lote de mensajes de WhatsApp
++# ─────────────────────────────────────────────────────────────────
++
++@shared_task(bind=True, max_retries=2, default_retry_delay=60)
++def process_whatsapp_batch(self, batch_id: int):
++    """
++    Envía un mensaje de WhatsApp (con template aprobado en Meta) a cada
++    cliente del lote. A diferencia de las llamadas, el envío de WhatsApp
++    es síncrono por destinatario (no hay un "batch job" en ElevenLabs
++    para WhatsApp), así que este task resuelve el lote completo.
++
++    Llamar desde la view con:
++        process_whatsapp_batch.delay(batch.id)
++    """
++    from apps.calls.models import CallBatch, Call
++    from apps.calls.elevenlabs_service import elevenlabs_service
++
++    try:
++        batch = CallBatch.objects.get(id=batch_id)
++    except CallBatch.DoesNotExist:
++        logger.error(f"CallBatch {batch_id} no encontrado")
++        return
++
++    if batch.channel != "whatsapp":
++        logger.warning(f"CallBatch {batch_id} no es de canal whatsapp (es '{batch.channel}')")
++        return
++
++    if not batch.whatsapp_template_name:
++        logger.error(f"CallBatch {batch_id} no tiene whatsapp_template_name configurado")
++        batch.status = "failed"
++        batch.save(update_fields=["status"])
++        return
++
++    calls = Call.objects.filter(batch=batch, channel="whatsapp").select_related("client")
++
++    if not calls.exists():
++        logger.error(f"CallBatch {batch_id} no tiene mensajes de WhatsApp asociados")
++        batch.status = "failed"
++        batch.save(update_fields=["status"])
++        return
++
++    batch.status = "processing"
++    batch.started_at = timezone.now()
++    batch.save(update_fields=["status", "started_at"])
++
++    sent, failed = 0, 0
++
++    for call in calls:
++        client = call.client
++        if not client.phone:
++            logger.warning(f"Cliente {client.id} sin teléfono, omitiendo")
++            continue
++
++        # Variables del template en orden: nombre, monto (ajustar según el template real)
++        template_params = [
++            f"{client.first_name} {client.last_name}".strip() or "Cliente",
++            str(client.debt_amount or ""),
++        ]
++
++        call.status = "in_progress"
++        call.started_at = timezone.now()
++        call.save(update_fields=["status", "started_at"])
++
++        try:
++            result = elevenlabs_service.send_whatsapp_message(
++                phone_number=client.phone,
++                template_name=batch.whatsapp_template_name,
++                template_language=batch.whatsapp_template_language or "es",
++                template_params=template_params,
++            )
++            call.whatsapp_message_id = result.get("message_id") or result.get("id")
++            call.status = "completed"
++            call.outcome = "sent"
++            call.completed_at = timezone.now()
++            call.save(update_fields=[
++                "whatsapp_message_id", "status", "outcome", "completed_at"
++            ])
++            sent += 1
++        except Exception as exc:
++            logger.error(f"Error enviando WhatsApp a {client.phone}: {exc}")
++            call.status = "failed"
++            call.outcome = "send_error"
++            call.error_message = str(exc)
++            call.completed_at = timezone.now()
++            call.save(update_fields=[
++                "status", "outcome", "error_message", "completed_at"
++            ])
++            failed += 1
++
++    batch.status = "completed"
++    batch.processed_clients = sent + failed
++    batch.completed_at = timezone.now()
++    batch.save(update_fields=["status", "processed_clients", "completed_at"])
++
++    logger.info(
++        f"CallBatch {batch_id} (whatsapp) finalizado. Enviados: {sent}, fallidos: {failed}"
++    )
++    return {"sent": sent, "failed": failed}
++
++
++# ─────────────────────────────────────────────────────────────────
++# TAREA 6: Reintentar un mensaje de WhatsApp fallido
++# ─────────────────────────────────────────────────────────────────
++
++@shared_task(bind=True, max_retries=3, default_retry_delay=300)
++def retry_failed_whatsapp(self, call_id: int):
++    """
++    Reintenta el envío de un mensaje de WhatsApp que falló.
++
++    Llamar desde la view /api/calls/{id}/retry/ con:
++        retry_failed_whatsapp.delay(call.id)
++    """
++    from apps.calls.models import Call
++    from apps.calls.elevenlabs_service import elevenlabs_service
++
++    try:
++        call = Call.objects.select_related("client", "batch").get(id=call_id)
++    except Call.DoesNotExist:
++        logger.error(f"Call {call_id} no encontrada para retry de WhatsApp")
++        return
++
++    client = call.client
++    batch = call.batch
++
++    if not client.phone:
++        logger.error(f"Cliente {client.id} no tiene teléfono, no se puede reintentar")
++        return
++
++    if not batch.whatsapp_template_name:
++        logger.error(f"CallBatch {batch.id} no tiene whatsapp_template_name configurado")
++        return
++
++    template_params = [
++        f"{client.first_name} {client.last_name}".strip() or "Cliente",
++        str(client.debt_amount or ""),
++    ]
++
++    try:
++        result = elevenlabs_service.send_whatsapp_message(
++            phone_number=client.phone,
++            template_name=batch.whatsapp_template_name,
++            template_language=batch.whatsapp_template_language or "es",
++            template_params=template_params,
++        )
++        call.whatsapp_message_id = result.get("message_id") or result.get("id")
++        call.status = "completed"
++        call.outcome = "sent"
++        call.retry_count = (call.retry_count or 0) + 1
++        call.completed_at = timezone.now()
++        call.save(update_fields=[
++            "whatsapp_message_id", "status", "outcome", "retry_count", "completed_at"
++        ])
++        logger.info(f"Reintento de WhatsApp Call {call_id} exitoso")
++    except Exception as exc:
++        logger.error(f"Error en reintento de WhatsApp Call {call_id}: {exc}")
++        call.retry_count = (call.retry_count or 0) + 1
++        call.error_message = str(exc)
++        call.save(update_fields=["retry_count", "error_message"])
++        raise self.retry(exc=exc)
++
++
+ @shared_task
+ def retry_failed_calls_auto():
+     """
+@@ -357,8 +519,11 @@ def retry_failed_calls_auto():
+         if not call.client.phone:
+             continue
+         try:
+-            retry_failed_call.delay(call.id)
+-            logger.info(f"Reintento programado para Call {call.id} - {call.client.phone}")
++            if call.channel == "whatsapp":
++                retry_failed_whatsapp.delay(call.id)
++            else:
++                retry_failed_call.delay(call.id)
++            logger.info(f"Reintento programado para Call {call.id} ({call.channel}) - {call.client.phone}")
+         except Exception as e:
+             logger.error(f"Error programando reintento para Call {call.id}: {e}")
+ 
+diff --git a/backend/apps/dashboard/templates/dashboard/campaign_detail.html b/backend/apps/dashboard/templates/dashboard/campaign_detail.html
+index fc8eb41..f2366aa 100644
+--- a/backend/apps/dashboard/templates/dashboard/campaign_detail.html
++++ b/backend/apps/dashboard/templates/dashboard/campaign_detail.html
+@@ -7,6 +7,9 @@
+     <a href="/" style="color: var(--muted); text-decoration: none; font-size: 13px;">← Volver</a>
+     <h1 style="font-size: 22px; font-weight: 700;">{{ batch.name }}</h1>
+     <span class="badge badge-{{ batch.status }}">{{ batch.get_status_display }}</span>
++    <span class="badge" style="background: var(--border);">
++      {% if batch.channel == 'whatsapp' %}💬 WhatsApp{% else %}📞 Llamada{% endif %}
++    </span>
+ 	<a href="/campaigns/{{ batch.id }}/export/?format=xlsx" class="btn btn-secondary btn-sm">⬇ Excel</a>
+ 	<a href="/campaigns/{{ batch.id }}/export/?format=csv" class="btn btn-secondary btn-sm">⬇ CSV</a>
+   </div>
+@@ -67,7 +70,7 @@
+         <th>Teléfono</th>
+         <th>Deuda</th>
+         <th>Estado</th>
+-        <th>Duración</th>
++        <th>{% if batch.channel == 'whatsapp' %}Canal{% else %}Duración{% endif %}</th>
+         <th>Resultado</th>
+         <th></th>
+       </tr>
+@@ -80,7 +83,13 @@
+         <td>${{ call.client.debt_amount|default:"-" }}</td>
+         <td><span class="badge badge-{{ call.status }}">{{ call.get_status_display }}</span></td>
+         <td style="color: var(--muted);">
+-          {% if call.duration %}{{ call.duration }}s{% else %}—{% endif %}
++          {% if call.channel == 'whatsapp' %}
++            💬 WhatsApp
++          {% elif call.duration %}
++            {{ call.duration }}s
++          {% else %}
++            —
++          {% endif %}
+         </td>
+         <td style="color: var(--muted); font-size: 12px;">{{ call.outcome|default:"—" }}</td>
+         <td>
+diff --git a/backend/apps/dashboard/templates/dashboard/campaign_new.html b/backend/apps/dashboard/templates/dashboard/campaign_new.html
+index b30ef62..57fe365 100644
+--- a/backend/apps/dashboard/templates/dashboard/campaign_new.html
++++ b/backend/apps/dashboard/templates/dashboard/campaign_new.html
+@@ -17,6 +17,35 @@
+         <input type="text" name="name" placeholder="Ej: Cobranzas julio 2026" required>
+       </div>
+ 
++      <div class="form-group">
++        <label>Canal de contacto</label>
++        <div style="display: flex; gap: 16px; margin-top: 4px;">
++          <label style="display: flex; align-items: center; gap: 6px; font-weight: 400;">
++            <input type="radio" name="channel" value="call" checked onchange="toggleWhatsappFields()">
++            📞 Llamada telefónica
++          </label>
++          <label style="display: flex; align-items: center; gap: 6px; font-weight: 400;">
++            <input type="radio" name="channel" value="whatsapp" onchange="toggleWhatsappFields()">
++            💬 WhatsApp
++          </label>
++        </div>
++      </div>
++
++      <div id="whatsapp-fields" style="display: none;">
++        <div class="form-group">
++          <label>Template de WhatsApp (aprobado en Meta)</label>
++          <input type="text" name="whatsapp_template_name" placeholder="Ej: plantilla01">
++          <p style="font-size: 11px; color: var(--muted); margin-top: 4px;">
++            Debe coincidir exactamente con el nombre del template aprobado en el
++            Gestor de WhatsApp de Meta (business.facebook.com).
++          </p>
++        </div>
++        <div class="form-group">
++          <label>Idioma del template</label>
++          <input type="text" name="whatsapp_template_language" value="es" placeholder="es">
++        </div>
++      </div>
++
+       <div class="form-group">
+         <label>Archivo CSV o Excel</label>
+         <div class="upload-zone" onclick="document.getElementById('file-input').click()">
+@@ -48,7 +77,7 @@
+         <button type="submit" name="action" value="save" class="btn btn-secondary">
+           Guardar sin lanzar
+         </button>
+-        <button type="submit" name="action" value="launch" class="btn btn-primary">
++        <button type="submit" name="action" value="launch" class="btn btn-primary" id="launch-btn">
+           🚀 Guardar y llamar ahora
+         </button>
+       </div>
+@@ -61,5 +90,16 @@ function showFileName(input) {
+   const label = document.getElementById('file-name');
+   label.textContent = input.files[0]?.name || '';
+ }
++
++function toggleWhatsappFields() {
++  const isWhatsapp = document.querySelector('input[name="channel"]:checked').value === 'whatsapp';
++  const fields = document.getElementById('whatsapp-fields');
++  const templateInput = fields.querySelector('input[name="whatsapp_template_name"]');
++  const launchBtn = document.getElementById('launch-btn');
++
++  fields.style.display = isWhatsapp ? 'block' : 'none';
++  templateInput.required = isWhatsapp;
++  launchBtn.textContent = isWhatsapp ? '🚀 Guardar y enviar por WhatsApp' : '🚀 Guardar y llamar ahora';
++}
+ </script>
+ {% endblock %}
+diff --git a/backend/apps/dashboard/views.py b/backend/apps/dashboard/views.py
+index 6d7ce66..5c821b1 100644
+--- a/backend/apps/dashboard/views.py
++++ b/backend/apps/dashboard/views.py
+@@ -18,7 +18,7 @@ from django.contrib.auth.mixins import LoginRequiredMixin
+ 
+ from apps.calls.models import CallBatch, Call
+ from apps.clients.models import Client
+-from apps.calls.tasks import process_call_batch
++from apps.calls.tasks import process_call_batch, process_whatsapp_batch
+ 
+ logger = logging.getLogger(__name__)
+ 
+@@ -93,9 +93,12 @@ class CampaignNewView(LoginRequiredMixin,View):
+         return render(request, "dashboard/campaign_new.html")
+ 
+     def post(self, request):
+-        name   = request.POST.get("name", "").strip()
+-        action = request.POST.get("action", "save")
+-        file   = request.FILES.get("file")
++        name    = request.POST.get("name", "").strip()
++        action  = request.POST.get("action", "save")
++        file    = request.FILES.get("file")
++        channel = request.POST.get("channel", "call")
++        whatsapp_template_name     = request.POST.get("whatsapp_template_name", "").strip()
++        whatsapp_template_language = request.POST.get("whatsapp_template_language", "es").strip() or "es"
+ 
+         if not name:
+             messages.error(request, "El nombre de la campaña es obligatorio.")
+@@ -105,6 +108,10 @@ class CampaignNewView(LoginRequiredMixin,View):
+             messages.error(request, "Debés subir un archivo CSV o Excel.")
+             return render(request, "dashboard/campaign_new.html")
+ 
++        if channel == "whatsapp" and not whatsapp_template_name:
++            messages.error(request, "Elegí un template de WhatsApp aprobado en Meta.")
++            return render(request, "dashboard/campaign_new.html")
++
+         # Leer archivo
+         try:
+             if file.name.endswith(".csv"):
+@@ -128,6 +135,9 @@ class CampaignNewView(LoginRequiredMixin,View):
+             name=name,
+             status="pending",
+             total_clients=len(df),
++            channel=channel,
++            whatsapp_template_name=whatsapp_template_name if channel == "whatsapp" else None,
++            whatsapp_template_language=whatsapp_template_language if channel == "whatsapp" else None,
+         )
+ 
+         # Crear clientes y llamadas
+@@ -158,18 +168,24 @@ class CampaignNewView(LoginRequiredMixin,View):
+                 batch=batch,
+                 client=client,
+                 status="pending",
++                channel=channel,
+             )
+             calls_created += 1
+ 
+         batch.total_clients = calls_created
+         batch.save(update_fields=["total_clients"])
+ 
+-        messages.success(request, f"Campaña creada con {calls_created} clientes.")
++        canal_label = "WhatsApp" if channel == "whatsapp" else "llamadas"
++        messages.success(request, f"Campaña creada con {calls_created} clientes ({canal_label}).")
+ 
+-        # Si eligieron lanzar ahora, encolar la tarea Celery
++        # Si eligieron lanzar ahora, encolar la tarea Celery según el canal
+         if action == "launch":
+-            process_call_batch.delay(batch.id)
+-            messages.success(request, "Las llamadas se están iniciando en background.")
++            if channel == "whatsapp":
++                process_whatsapp_batch.delay(batch.id)
++                messages.success(request, "Los mensajes de WhatsApp se están enviando en background.")
++            else:
++                process_call_batch.delay(batch.id)
++                messages.success(request, "Las llamadas se están iniciando en background.")
+ 
+         return redirect(f"/campaigns/{batch.id}/")
+ 
+@@ -206,8 +222,12 @@ class CampaignLaunchView(LoginRequiredMixin, View):
+             messages.error(request, f"El lote no se puede lanzar en estado '{batch.status}'.")
+             return redirect(f"/campaigns/{batch.id}/")
+ 
+-        process_call_batch.delay(batch.id)
+-        messages.success(request, "Llamadas iniciadas. Los resultados se actualizarán automáticamente.")
++        if batch.channel == "whatsapp":
++            process_whatsapp_batch.delay(batch.id)
++            messages.success(request, "Mensajes de WhatsApp iniciados. Los resultados se actualizarán automáticamente.")
++        else:
++            process_call_batch.delay(batch.id)
++            messages.success(request, "Llamadas iniciadas. Los resultados se actualizarán automáticamente.")
+         return redirect(f"/campaigns/{batch.id}/")
+ 
+ 
+diff --git a/backend/proyecto_cobranza/settings.py b/backend/proyecto_cobranza/settings.py
+index 6037389..b18fdcb 100644
+--- a/backend/proyecto_cobranza/settings.py
++++ b/backend/proyecto_cobranza/settings.py
+@@ -162,6 +162,7 @@ LOGGING = {
+ ELEVENLABS_API_KEY = os.environ.get('ELEVENLABS_API_KEY', '')
+ ELEVENLABS_AGENT_ID = os.environ.get('ELEVENLABS_AGENT_ID', '')
+ ELEVENLABS_PHONE_NUMBER_ID = os.environ.get('ELEVENLABS_PHONE_NUMBER_ID', '')
++ELEVENLABS_WHATSAPP_PHONE_NUMBER_ID = os.environ.get('ELEVENLABS_WHATSAPP_PHONE_NUMBER_ID', '')
+ 
+ LOGIN_URL = '/login/'
+ LOGIN_REDIRECT_URL = '/'

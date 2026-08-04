@@ -7,6 +7,9 @@
     <a href="/" style="color: var(--muted); text-decoration: none; font-size: 13px;">← Volver</a>
     <h1 style="font-size: 22px; font-weight: 700;">{{ batch.name }}</h1>
     <span class="badge badge-{{ batch.status }}">{{ batch.get_status_display }}</span>
+    <span class="badge" style="background: var(--border);">
+      {% if batch.channel == 'whatsapp' %}💬 WhatsApp{% else %}📞 Llamada{% endif %}
+    </span>
 	<a href="/campaigns/{{ batch.id }}/export/?format=xlsx" class="btn btn-secondary btn-sm">⬇ Excel</a>
 	<a href="/campaigns/{{ batch.id }}/export/?format=csv" class="btn btn-secondary btn-sm">⬇ CSV</a>
   </div>
@@ -67,7 +70,7 @@
         <th>Teléfono</th>
         <th>Deuda</th>
         <th>Estado</th>
-        <th>Duración</th>
+        <th>{% if batch.channel == 'whatsapp' %}Canal{% else %}Duración{% endif %}</th>
         <th>Resultado</th>
         <th></th>
       </tr>
@@ -80,7 +83,13 @@
         <td>${{ call.client.debt_amount|default:"-" }}</td>
         <td><span class="badge badge-{{ call.status }}">{{ call.get_status_display }}</span></td>
         <td style="color: var(--muted);">
-          {% if call.duration %}{{ call.duration }}s{% else %}—{% endif %}
+          {% if call.channel == 'whatsapp' %}
+            💬 WhatsApp
+          {% elif call.duration %}
+            {{ call.duration }}s
+          {% else %}
+            —
+          {% endif %}
         </td>
         <td style="color: var(--muted); font-size: 12px;">{{ call.outcome|default:"—" }}</td>
         <td>

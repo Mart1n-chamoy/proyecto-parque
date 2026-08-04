@@ -4,16 +4,16 @@ from .models import CallBatch, Call
 
 @admin.register(CallBatch)
 class CallBatchAdmin(admin.ModelAdmin):
-    list_display = ('name', 'status', 'total_clients', 'processed_clients', 'created_at')
-    list_filter = ('status', 'created_at')
+    list_display = ('name', 'channel', 'status', 'total_clients', 'processed_clients', 'created_at')
+    list_filter = ('channel', 'status', 'created_at')
     search_fields = ('name', 'description')
     readonly_fields = ('created_at', 'started_at', 'completed_at')
 
 
 @admin.register(Call)
 class CallAdmin(admin.ModelAdmin):
-    list_display = ('get_client_phone', 'status', 'duration', 'created_at')
-    list_filter = ('status', 'batch', 'created_at')
+    list_display = ('get_client_phone', 'channel', 'status', 'duration', 'outcome', 'created_at')
+    list_filter = ('channel', 'status', 'batch', 'created_at')
     search_fields = ('client__phone', 'batch__name')
     readonly_fields = ('created_at', 'started_at', 'completed_at')
 
