@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>{% block title %}Cobranzas IA{% endblock %}</title>
+  <title>{% block title %}ARGOS{% endblock %}</title>
   <script src="https://unpkg.com/htmx.org@1.9.12"></script>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -53,7 +53,7 @@
       align-items: center;
       gap: 8px;
     }
-    .nav-brand span { color: var(--accent); }
+    .nav-brand .brand-accent { color: var(--accent); }
     nav a {
       color: var(--muted);
       text-decoration: none;
@@ -227,7 +227,7 @@
 <body>
 
 <nav>
-  <a href="/" class="nav-brand">📞 <span>Cobranzas</span> IA</a>
+  <a href="/" class="nav-brand">📞 <span><span class="brand-accent">AR</span>GOS</span></a>
   <a href="/" {% if request.path == '/' %}class="active"{% endif %}>Dashboard</a>
   <a href="/campaigns/" {% if '/campaigns' in request.path %}class="active"{% endif %}>Campañas</a>
   <a href="/calls/" {% if '/calls' in request.path %}class="active"{% endif %}>Llamadas</a>
