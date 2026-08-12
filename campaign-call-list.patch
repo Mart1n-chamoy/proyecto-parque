@@ -1,0 +1,304 @@
+diff --git a/backend/apps/dashboard/urls.py b/backend/apps/dashboard/urls.py
+index 787ae0c..b5d1428 100644
+--- a/backend/apps/dashboard/urls.py
++++ b/backend/apps/dashboard/urls.py
+@@ -16,7 +16,7 @@ urlpatterns = [
+     path('campaigns/<int:pk>/',        views.CampaignDetailView.as_view(), name='campaign-detail'),
+     path('campaigns/<int:pk>/launch/', views.CampaignLaunchView.as_view(),name='campaign-launch'),
+     path('campaigns/<int:pk>/status/', views.CampaignStatusView.as_view(),name='campaign-status'),
+-    path('campaigns/',               views.DashboardView.as_view(),      name='campaign-list'),
+-    path('calls/',                   views.DashboardView.as_view(),       name='call-list'),
++    path('campaigns/',               views.CampaignListView.as_view(),   name='campaign-list'),
++    path('calls/',                   views.CallListView.as_view(),       name='call-list'),
+     path('campaigns/<int:pk>/export/', views.CampaignExportView.as_view(), name='campaign-export'),
+ ]
+diff --git a/backend/apps/dashboard/views.py b/backend/apps/dashboard/views.py
+index 5c821b1..431bf87 100644
+--- a/backend/apps/dashboard/views.py
++++ b/backend/apps/dashboard/views.py
+@@ -10,6 +10,7 @@ Agregar en proyecto_cobranza/urls.py:
+ import io
+ import logging
+ import pandas as pd
++from django.db import models
+ from django.shortcuts import render, redirect, get_object_or_404
+ from django.contrib import messages
+ from django.views import View
+@@ -86,6 +87,76 @@ class DashboardView(LoginRequiredMixin, View):
+         })
+ 
+ 
++class CampaignListView(LoginRequiredMixin, View):
++    """GET /campaigns/ — lista completa de campañas (paginada, con filtros)"""
++
++    def get(self, request):
++        from django.core.paginator import Paginator
++
++        qs = CallBatch.objects.order_by("-created_at")
++
++        status_filter = request.GET.get("status", "")
++        if status_filter:
++            qs = qs.filter(status=status_filter)
++
++        channel_filter = request.GET.get("channel", "")
++        if channel_filter:
++            qs = qs.filter(channel=channel_filter)
++
++        search = request.GET.get("q", "").strip()
++        if search:
++            qs = qs.filter(name__icontains=search)
++
++        paginator = Paginator(qs, 20)
++        page_obj = paginator.get_page(request.GET.get("page"))
++
++        return render(request, "dashboard/campaign_list.html", {
++            "page_obj": page_obj,
++            "status_filter": status_filter,
++            "channel_filter": channel_filter,
++            "search": search,
++            "status_choices": CallBatch.STATUS_CHOICES,
++            "channel_choices": CallBatch.CHANNEL_CHOICES,
++        })
++
++
++class CallListView(LoginRequiredMixin, View):
++    """GET /calls/ — lista completa de llamadas/mensajes individuales (paginada, con filtros)"""
++
++    def get(self, request):
++        from django.core.paginator import Paginator
++
++        qs = Call.objects.select_related("client", "batch").order_by("-created_at")
++
++        status_filter = request.GET.get("status", "")
++        if status_filter:
++            qs = qs.filter(status=status_filter)
++
++        channel_filter = request.GET.get("channel", "")
++        if channel_filter:
++            qs = qs.filter(channel=channel_filter)
++
++        search = request.GET.get("q", "").strip()
++        if search:
++            qs = qs.filter(
++                models.Q(client__first_name__icontains=search) |
++                models.Q(client__last_name__icontains=search) |
++                models.Q(client__phone__icontains=search)
++            )
++
++        paginator = Paginator(qs, 30)
++        page_obj = paginator.get_page(request.GET.get("page"))
++
++        return render(request, "dashboard/call_list.html", {
++            "page_obj": page_obj,
++            "status_filter": status_filter,
++            "channel_filter": channel_filter,
++            "search": search,
++            "status_choices": Call.STATUS_CHOICES,
++            "channel_choices": CallBatch.CHANNEL_CHOICES,
++        })
++
++
+ class CampaignNewView(LoginRequiredMixin,View):
+     """GET/POST /campaigns/new/ — crear campaña y subir CSV"""
+ 
+diff --git a/backend/apps/dashboard/templates/dashboard/call_list.html b/backend/apps/dashboard/templates/dashboard/call_list.html
+new file mode 100644
+index 0000000..80aa801
+--- /dev/null
++++ b/backend/apps/dashboard/templates/dashboard/call_list.html
+@@ -0,0 +1,94 @@
++{% extends "dashboard/base.html" %}
++{% block title %}Llamadas — Cobranzas IA{% endblock %}
++
++{% block content %}
++<div style="margin-bottom: 24px;">
++  <h1 style="font-size: 22px; font-weight: 700;">Llamadas</h1>
++  <p style="color: var(--muted); margin-top: 4px;">{{ page_obj.paginator.count }} llamada{{ page_obj.paginator.count|pluralize }}/mensaje{{ page_obj.paginator.count|pluralize }} en total</p>
++</div>
++
++<!-- FILTROS -->
++<form method="get" class="card" style="margin-bottom:16px; display:flex; gap:12px; align-items:flex-end; flex-wrap:wrap;">
++  <div style="flex:1; min-width:180px;">
++    <label style="font-size:12px; color:var(--muted); display:block; margin-bottom:4px;">Buscar por cliente o teléfono</label>
++    <input type="text" name="q" value="{{ search }}" placeholder="Nombre o teléfono"
++      style="width:100%; background:var(--bg); border:1px solid var(--border); color:var(--text);
++             padding:8px 10px; border-radius:var(--radius); font-size:13px;">
++  </div>
++  <div>
++    <label style="font-size:12px; color:var(--muted); display:block; margin-bottom:4px;">Estado</label>
++    <select name="status" style="background:var(--bg); border:1px solid var(--border); color:var(--text);
++             padding:8px 10px; border-radius:var(--radius); font-size:13px;">
++      <option value="">Todos</option>
++      {% for value, label in status_choices %}
++        <option value="{{ value }}" {% if status_filter == value %}selected{% endif %}>{{ label }}</option>
++      {% endfor %}
++    </select>
++  </div>
++  <div>
++    <label style="font-size:12px; color:var(--muted); display:block; margin-bottom:4px;">Canal</label>
++    <select name="channel" style="background:var(--bg); border:1px solid var(--border); color:var(--text);
++             padding:8px 10px; border-radius:var(--radius); font-size:13px;">
++      <option value="">Todos</option>
++      {% for value, label in channel_choices %}
++        <option value="{{ value }}" {% if channel_filter == value %}selected{% endif %}>{{ label }}</option>
++      {% endfor %}
++    </select>
++  </div>
++  <button type="submit" class="btn btn-secondary">Filtrar</button>
++  {% if search or status_filter or channel_filter %}
++    <a href="/calls/" class="btn btn-secondary">Limpiar</a>
++  {% endif %}
++</form>
++
++<!-- TABLA -->
++<div class="card">
++  {% if page_obj.object_list %}
++  <table>
++    <thead>
++      <tr>
++        <th>Cliente</th>
++        <th>Teléfono</th>
++        <th>Campaña</th>
++        <th>Canal</th>
++        <th>Estado</th>
++        <th>Duración</th>
++        <th>Resultado</th>
++        <th>Fecha</th>
++      </tr>
++    </thead>
++    <tbody>
++      {% for call in page_obj.object_list %}
++      <tr>
++        <td style="font-weight: 500;">{{ call.client.first_name }} {{ call.client.last_name }}</td>
++        <td style="color: var(--muted);">{{ call.client.phone }}</td>
++        <td><a href="/campaigns/{{ call.batch.id }}/" style="color: var(--accent); text-decoration:none;">{{ call.batch.name }}</a></td>
++        <td>{% if call.channel == 'whatsapp' %}💬 WhatsApp{% else %}📞 Llamada{% endif %}</td>
++        <td><span class="badge badge-{{ call.status }}">{{ call.get_status_display }}</span></td>
++        <td style="color: var(--muted);">
++          {% if call.channel == 'whatsapp' %}—{% elif call.duration %}{{ call.duration }}s{% else %}—{% endif %}
++        </td>
++        <td style="color: var(--muted);">{{ call.outcome|default:"—" }}</td>
++        <td style="color: var(--muted);">{{ call.created_at|date:"d/m/Y H:i" }}</td>
++      </tr>
++      {% endfor %}
++    </tbody>
++  </table>
++  {% else %}
++  <p style="color: var(--muted); text-align:center; padding:32px 0;">No hay llamadas que coincidan con el filtro.</p>
++  {% endif %}
++</div>
++
++<!-- PAGINACIÓN -->
++{% if page_obj.paginator.num_pages > 1 %}
++<div style="display:flex; justify-content:center; gap:8px; margin-top:16px;">
++  {% if page_obj.has_previous %}
++    <a class="btn btn-secondary btn-sm" href="?page={{ page_obj.previous_page_number }}{% if search %}&q={{ search }}{% endif %}{% if status_filter %}&status={{ status_filter }}{% endif %}{% if channel_filter %}&channel={{ channel_filter }}{% endif %}">← Anterior</a>
++  {% endif %}
++  <span style="color:var(--muted); font-size:13px; align-self:center;">Página {{ page_obj.number }} de {{ page_obj.paginator.num_pages }}</span>
++  {% if page_obj.has_next %}
++    <a class="btn btn-secondary btn-sm" href="?page={{ page_obj.next_page_number }}{% if search %}&q={{ search }}{% endif %}{% if status_filter %}&status={{ status_filter }}{% endif %}{% if channel_filter %}&channel={{ channel_filter }}{% endif %}">Siguiente →</a>
++  {% endif %}
++</div>
++{% endif %}
++{% endblock %}
+diff --git a/backend/apps/dashboard/templates/dashboard/campaign_list.html b/backend/apps/dashboard/templates/dashboard/campaign_list.html
+new file mode 100644
+index 0000000..1bf12bd
+--- /dev/null
++++ b/backend/apps/dashboard/templates/dashboard/campaign_list.html
+@@ -0,0 +1,95 @@
++{% extends "dashboard/base.html" %}
++{% block title %}Campañas — Cobranzas IA{% endblock %}
++
++{% block content %}
++<div style="margin-bottom: 24px; display:flex; align-items:center; justify-content:space-between;">
++  <div>
++    <h1 style="font-size: 22px; font-weight: 700;">Campañas</h1>
++    <p style="color: var(--muted); margin-top: 4px;">{{ page_obj.paginator.count }} campaña{{ page_obj.paginator.count|pluralize }} en total</p>
++  </div>
++  <a href="/campaigns/new/" class="btn btn-primary">+ Nueva campaña</a>
++</div>
++
++<!-- FILTROS -->
++<form method="get" class="card" style="margin-bottom:16px; display:flex; gap:12px; align-items:flex-end; flex-wrap:wrap;">
++  <div style="flex:1; min-width:180px;">
++    <label style="font-size:12px; color:var(--muted); display:block; margin-bottom:4px;">Buscar por nombre</label>
++    <input type="text" name="q" value="{{ search }}" placeholder="Nombre de campaña"
++      style="width:100%; background:var(--bg); border:1px solid var(--border); color:var(--text);
++             padding:8px 10px; border-radius:var(--radius); font-size:13px;">
++  </div>
++  <div>
++    <label style="font-size:12px; color:var(--muted); display:block; margin-bottom:4px;">Estado</label>
++    <select name="status" style="background:var(--bg); border:1px solid var(--border); color:var(--text);
++             padding:8px 10px; border-radius:var(--radius); font-size:13px;">
++      <option value="">Todos</option>
++      {% for value, label in status_choices %}
++        <option value="{{ value }}" {% if status_filter == value %}selected{% endif %}>{{ label }}</option>
++      {% endfor %}
++    </select>
++  </div>
++  <div>
++    <label style="font-size:12px; color:var(--muted); display:block; margin-bottom:4px;">Canal</label>
++    <select name="channel" style="background:var(--bg); border:1px solid var(--border); color:var(--text);
++             padding:8px 10px; border-radius:var(--radius); font-size:13px;">
++      <option value="">Todos</option>
++      {% for value, label in channel_choices %}
++        <option value="{{ value }}" {% if channel_filter == value %}selected{% endif %}>{{ label }}</option>
++      {% endfor %}
++    </select>
++  </div>
++  <button type="submit" class="btn btn-secondary">Filtrar</button>
++  {% if search or status_filter or channel_filter %}
++    <a href="/campaigns/" class="btn btn-secondary">Limpiar</a>
++  {% endif %}
++</form>
++
++<!-- TABLA -->
++<div class="card">
++  {% if page_obj.object_list %}
++  <table>
++    <thead>
++      <tr>
++        <th>Nombre</th>
++        <th>Canal</th>
++        <th>Clientes</th>
++        <th>Procesados</th>
++        <th>Estado</th>
++        <th>Creado</th>
++        <th></th>
++      </tr>
++    </thead>
++    <tbody>
++      {% for batch in page_obj.object_list %}
++      <tr>
++        <td style="font-weight: 500;">{{ batch.name }}</td>
++        <td>
++          {% if batch.channel == 'whatsapp' %}💬 WhatsApp{% else %}📞 Llamada{% endif %}
++        </td>
++        <td>{{ batch.total_clients }}</td>
++        <td>{{ batch.processed_clients }}</td>
++        <td><span class="badge badge-{{ batch.status }}">{{ batch.get_status_display }}</span></td>
++        <td style="color: var(--muted);">{{ batch.created_at|date:"d/m/Y H:i" }}</td>
++        <td><a href="/campaigns/{{ batch.id }}/" class="btn btn-secondary btn-sm">Ver</a></td>
++      </tr>
++      {% endfor %}
++    </tbody>
++  </table>
++  {% else %}
++  <p style="color: var(--muted); text-align:center; padding:32px 0;">No hay campañas que coincidan con el filtro.</p>
++  {% endif %}
++</div>
++
++<!-- PAGINACIÓN -->
++{% if page_obj.paginator.num_pages > 1 %}
++<div style="display:flex; justify-content:center; gap:8px; margin-top:16px;">
++  {% if page_obj.has_previous %}
++    <a class="btn btn-secondary btn-sm" href="?page={{ page_obj.previous_page_number }}{% if search %}&q={{ search }}{% endif %}{% if status_filter %}&status={{ status_filter }}{% endif %}{% if channel_filter %}&channel={{ channel_filter }}{% endif %}">← Anterior</a>
++  {% endif %}
++  <span style="color:var(--muted); font-size:13px; align-self:center;">Página {{ page_obj.number }} de {{ page_obj.paginator.num_pages }}</span>
++  {% if page_obj.has_next %}
++    <a class="btn btn-secondary btn-sm" href="?page={{ page_obj.next_page_number }}{% if search %}&q={{ search }}{% endif %}{% if status_filter %}&status={{ status_filter }}{% endif %}{% if channel_filter %}&channel={{ channel_filter }}{% endif %}">Siguiente →</a>
++  {% endif %}
++</div>
++{% endif %}
++{% endblock %}
