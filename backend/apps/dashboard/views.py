@@ -10,6 +10,7 @@ Agregar en proyecto_cobranza/urls.py:
 import io
 import logging
 import pandas as pd
+from django.db import models
 from django.shortcuts import render, redirect, get_object_or_404
 from django.contrib import messages
 from django.views import View
@@ -83,6 +84,76 @@ class DashboardView(LoginRequiredMixin, View):
                 "failed_only_calls": failed_only,
                 "success_rate":      success_rate,
             },
+        })
+
+
+class CampaignListView(LoginRequiredMixin, View):
+    """GET /campaigns/ — lista completa de campañas (paginada, con filtros)"""
+
+    def get(self, request):
+        from django.core.paginator import Paginator
+
+        qs = CallBatch.objects.order_by("-created_at")
+
+        status_filter = request.GET.get("status", "")
+        if status_filter:
+            qs = qs.filter(status=status_filter)
+
+        channel_filter = request.GET.get("channel", "")
+        if channel_filter:
+            qs = qs.filter(channel=channel_filter)
+
+        search = request.GET.get("q", "").strip()
+        if search:
+            qs = qs.filter(name__icontains=search)
+
+        paginator = Paginator(qs, 20)
+        page_obj = paginator.get_page(request.GET.get("page"))
+
+        return render(request, "dashboard/campaign_list.html", {
+            "page_obj": page_obj,
+            "status_filter": status_filter,
+            "channel_filter": channel_filter,
+            "search": search,
+            "status_choices": CallBatch.STATUS_CHOICES,
+            "channel_choices": CallBatch.CHANNEL_CHOICES,
+        })
+
+
+class CallListView(LoginRequiredMixin, View):
+    """GET /calls/ — lista completa de llamadas/mensajes individuales (paginada, con filtros)"""
+
+    def get(self, request):
+        from django.core.paginator import Paginator
+
+        qs = Call.objects.select_related("client", "batch").order_by("-created_at")
+
+        status_filter = request.GET.get("status", "")
+        if status_filter:
+            qs = qs.filter(status=status_filter)
+
+        channel_filter = request.GET.get("channel", "")
+        if channel_filter:
+            qs = qs.filter(channel=channel_filter)
+
+        search = request.GET.get("q", "").strip()
+        if search:
+            qs = qs.filter(
+                models.Q(client__first_name__icontains=search) |
+                models.Q(client__last_name__icontains=search) |
+                models.Q(client__phone__icontains=search)
+            )
+
+        paginator = Paginator(qs, 30)
+        page_obj = paginator.get_page(request.GET.get("page"))
+
+        return render(request, "dashboard/call_list.html", {
+            "page_obj": page_obj,
+            "status_filter": status_filter,
+            "channel_filter": channel_filter,
+            "search": search,
+            "status_choices": Call.STATUS_CHOICES,
+            "channel_choices": CallBatch.CHANNEL_CHOICES,
         })
 
 

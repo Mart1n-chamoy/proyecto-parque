@@ -1,0 +1,95 @@
+{% extends "dashboard/base.html" %}
+{% block title %}Campañas — Cobranzas IA{% endblock %}
+
+{% block content %}
+<div style="margin-bottom: 24px; display:flex; align-items:center; justify-content:space-between;">
+  <div>
+    <h1 style="font-size: 22px; font-weight: 700;">Campañas</h1>
+    <p style="color: var(--muted); margin-top: 4px;">{{ page_obj.paginator.count }} campaña{{ page_obj.paginator.count|pluralize }} en total</p>
+  </div>
+  <a href="/campaigns/new/" class="btn btn-primary">+ Nueva campaña</a>
+</div>
+
+<!-- FILTROS -->
+<form method="get" class="card" style="margin-bottom:16px; display:flex; gap:12px; align-items:flex-end; flex-wrap:wrap;">
+  <div style="flex:1; min-width:180px;">
+    <label style="font-size:12px; color:var(--muted); display:block; margin-bottom:4px;">Buscar por nombre</label>
+    <input type="text" name="q" value="{{ search }}" placeholder="Nombre de campaña"
+      style="width:100%; background:var(--bg); border:1px solid var(--border); color:var(--text);
+             padding:8px 10px; border-radius:var(--radius); font-size:13px;">
+  </div>
+  <div>
+    <label style="font-size:12px; color:var(--muted); display:block; margin-bottom:4px;">Estado</label>
+    <select name="status" style="background:var(--bg); border:1px solid var(--border); color:var(--text);
+             padding:8px 10px; border-radius:var(--radius); font-size:13px;">
+      <option value="">Todos</option>
+      {% for value, label in status_choices %}
+        <option value="{{ value }}" {% if status_filter == value %}selected{% endif %}>{{ label }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <div>
+    <label style="font-size:12px; color:var(--muted); display:block; margin-bottom:4px;">Canal</label>
+    <select name="channel" style="background:var(--bg); border:1px solid var(--border); color:var(--text);
+             padding:8px 10px; border-radius:var(--radius); font-size:13px;">
+      <option value="">Todos</option>
+      {% for value, label in channel_choices %}
+        <option value="{{ value }}" {% if channel_filter == value %}selected{% endif %}>{{ label }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <button type="submit" class="btn btn-secondary">Filtrar</button>
+  {% if search or status_filter or channel_filter %}
+    <a href="/campaigns/" class="btn btn-secondary">Limpiar</a>
+  {% endif %}
+</form>
+
+<!-- TABLA -->
+<div class="card">
+  {% if page_obj.object_list %}
+  <table>
+    <thead>
+      <tr>
+        <th>Nombre</th>
+        <th>Canal</th>
+        <th>Clientes</th>
+        <th>Procesados</th>
+        <th>Estado</th>
+        <th>Creado</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for batch in page_obj.object_list %}
+      <tr>
+        <td style="font-weight: 500;">{{ batch.name }}</td>
+        <td>
+          {% if batch.channel == 'whatsapp' %}💬 WhatsApp{% else %}📞 Llamada{% endif %}
+        </td>
+        <td>{{ batch.total_clients }}</td>
+        <td>{{ batch.processed_clients }}</td>
+        <td><span class="badge badge-{{ batch.status }}">{{ batch.get_status_display }}</span></td>
+        <td style="color: var(--muted);">{{ batch.created_at|date:"d/m/Y H:i" }}</td>
+        <td><a href="/campaigns/{{ batch.id }}/" class="btn btn-secondary btn-sm">Ver</a></td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p style="color: var(--muted); text-align:center; padding:32px 0;">No hay campañas que coincidan con el filtro.</p>
+  {% endif %}
+</div>
+
+<!-- PAGINACIÓN -->
+{% if page_obj.paginator.num_pages > 1 %}
+<div style="display:flex; justify-content:center; gap:8px; margin-top:16px;">
+  {% if page_obj.has_previous %}
+    <a class="btn btn-secondary btn-sm" href="?page={{ page_obj.previous_page_number }}{% if search %}&q={{ search }}{% endif %}{% if status_filter %}&status={{ status_filter }}{% endif %}{% if channel_filter %}&channel={{ channel_filter }}{% endif %}">← Anterior</a>
+  {% endif %}
+  <span style="color:var(--muted); font-size:13px; align-self:center;">Página {{ page_obj.number }} de {{ page_obj.paginator.num_pages }}</span>
+  {% if page_obj.has_next %}
+    <a class="btn btn-secondary btn-sm" href="?page={{ page_obj.next_page_number }}{% if search %}&q={{ search }}{% endif %}{% if status_filter %}&status={{ status_filter }}{% endif %}{% if channel_filter %}&channel={{ channel_filter }}{% endif %}">Siguiente →</a>
+  {% endif %}
+</div>
+{% endif %}
+{% endblock %}
