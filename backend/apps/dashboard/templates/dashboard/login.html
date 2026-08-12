@@ -1,4 +1,5 @@
 <!DOCTYPE html>
+{% load static %}
 <html lang="es">
 <head>
   <meta charset="UTF-8">
@@ -23,9 +24,8 @@
     }
     .logo {
       text-align: center; margin-bottom: 28px;
-      font-size: 22px; font-weight: 700;
     }
-    .logo span { color: var(--accent); }
+    .logo-img { height: 42px; width: auto; }
     h2 { font-size: 18px; font-weight: 600; margin-bottom: 4px; }
     .subtitle { color: var(--muted); font-size: 13px; margin-bottom: 24px; }
     .form-group { margin-bottom: 16px; }
@@ -52,7 +52,7 @@
 </head>
 <body>
 <div class="box">
-  <div class="logo">📞 <span>AR</span>GOS</div>
+  <div class="logo"><img src="{% static 'dashboard/img/argos-logo.png' %}" alt="ARGOS" class="logo-img"></div>
   <h2>Iniciar sesión</h2>
   <p class="subtitle">Ingresá con tu cuenta para continuar</p>
 
