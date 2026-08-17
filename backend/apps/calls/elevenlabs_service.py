@@ -85,6 +85,29 @@ class ElevenLabsService:
     # FLUJO 3 - Ejecución
     # ─────────────────────────────────────────────
 
+    @staticmethod
+    def build_first_message(name: str, amount: str, currency: str = "ARS") -> str:
+        """
+        Arma el primer mensaje ya personalizado con los datos reales del
+        cliente, para mandarlo como override en vez de depender de que el
+        agente resuelva {{name}}/{{amount}}/{{currency}} por su cuenta.
+
+        Por qué: el "Primer mensaje" configurado en el agente de ElevenLabs
+        ahora está vacío/genérico (a propósito, para que el agente pueda
+        responder a contactos entrantes por WhatsApp/llamada sin esas
+        variables). Pero en las campañas que INICIAMOS nosotros, sí
+        conocemos los datos del cliente de entrada, así que se los mandamos
+        ya armados acá para no perder la personalización.
+        """
+        name = name or "Cliente"
+        amount = amount or "su deuda registrada"
+        return (
+            f"Hola {name}, buenos días. Le habla Valentina, de Administración "
+            f"de Parque de Descanso. Le contactamos porque registramos un "
+            f"saldo pendiente de $ {amount} {currency} a su nombre. "
+            f"¿Tiene un momento para conversar sobre esto?"
+        )
+
     def create_batch(
         self,
         recipients: list[dict],
@@ -115,7 +138,16 @@ class ElevenLabsService:
                             "name":     r.get("name", "Cliente"),
                             "amount":   str(r.get("amount", "")),
                             "currency": r.get("currency", "ARS"),
-                        }
+                        },
+                        "conversation_config_override": {
+                            "agent": {
+                                "first_message": self.build_first_message(
+                                    r.get("name", "Cliente"),
+                                    str(r.get("amount", "")),
+                                    r.get("currency", "ARS"),
+                                )
+                            }
+                        },
                     },
                 }
                 for r in recipients
@@ -219,7 +251,16 @@ class ElevenLabsService:
 
         if dynamic_variables:
             payload["conversation_initiation_client_data"] = {
-                "dynamic_variables": dynamic_variables
+                "dynamic_variables": dynamic_variables,
+                "conversation_config_override": {
+                    "agent": {
+                        "first_message": self.build_first_message(
+                            dynamic_variables.get("name", "Cliente"),
+                            dynamic_variables.get("amount", ""),
+                            dynamic_variables.get("currency", "ARS"),
+                        )
+                    }
+                },
             }
 
         url = f"{self.base_url}/convai/whatsapp/outbound-message"
