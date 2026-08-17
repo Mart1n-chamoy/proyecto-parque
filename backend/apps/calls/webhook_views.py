@@ -136,3 +136,80 @@ class ElevenLabsWebhookView(View):
             return call.batch_id
         except Exception:
             return None
+
+
+ELEVENLABS_TOOL_SECRET = os.getenv("ELEVENLABS_TOOL_SECRET", "")
+
+# Template de WhatsApp para el enlace de pago. Es el mismo link para todos
+# los clientes (se identifican con su DNI en el portal), así que el
+# template no necesita variables.
+PAYMENT_LINK_TEMPLATE_NAME = os.getenv("WHATSAPP_PAYMENT_LINK_TEMPLATE", "enlace_pago_cobranzas")
+PAYMENT_LINK_TEMPLATE_LANGUAGE = "es"
+
+
+@method_decorator(csrf_exempt, name="dispatch")
+class SendPaymentLinkToolView(View):
+    """
+    POST /webhooks/send-payment-link/
+
+    Tool (server tool / webhook) que el agente de ElevenLabs llama cuando
+    el cliente pide que le manden el enlace de pago por WhatsApp — ya sea
+    que estén hablando por WhatsApp o por una llamada de voz.
+
+    Body esperado (JSON):
+        {"phone_number": "+5492616410756"}
+
+    Configurar en ElevenLabs → Agente → Tools → Add tool → Webhook:
+        URL:     https://tu-dominio.com/webhooks/send-payment-link/
+        Método:  POST
+        Headers: X-Tool-Secret: <mismo valor que ELEVENLABS_TOOL_SECRET>
+        Body:    {"phone_number": "{{el número, ver instrucciones en el prompt}}"}
+    """
+
+    def post(self, request):
+        # Verificación del secreto compartido — sin esto, cualquiera que
+        # encuentre la URL podría hacer que mandemos WhatsApps gratis.
+        if ELEVENLABS_TOOL_SECRET:
+            provided = request.headers.get("X-Tool-Secret", "")
+            if not hmac.compare_digest(provided, ELEVENLABS_TOOL_SECRET):
+                logger.warning("SendPaymentLinkTool: secreto inválido o ausente")
+                return JsonResponse(
+                    {"success": False, "error": "unauthorized"}, status=401
+                )
+        else:
+            logger.warning(
+                "ELEVENLABS_TOOL_SECRET no configurado — el endpoint de "
+                "enlace de pago está sin protección. Configuralo en el .env."
+            )
+
+        try:
+            payload = json.loads(request.body)
+        except json.JSONDecodeError:
+            return JsonResponse({"success": False, "error": "invalid_json"}, status=400)
+
+        phone_number = (payload.get("phone_number") or "").strip()
+        if not phone_number:
+            return JsonResponse(
+                {"success": False, "error": "falta phone_number"}, status=400
+            )
+
+        from apps.calls.elevenlabs_service import elevenlabs_service
+
+        try:
+            elevenlabs_service.send_whatsapp_message(
+                phone_number=phone_number,
+                template_name=PAYMENT_LINK_TEMPLATE_NAME,
+                template_language=PAYMENT_LINK_TEMPLATE_LANGUAGE,
+                template_params=[],
+            )
+            logger.info(f"Enlace de pago enviado por WhatsApp a {phone_number}")
+            return JsonResponse({
+                "success": True,
+                "message": "El enlace de pago se envió correctamente por WhatsApp.",
+            })
+        except Exception as exc:
+            logger.error(f"Error enviando enlace de pago a {phone_number}: {exc}")
+            return JsonResponse({
+                "success": False,
+                "error": "No se pudo enviar el enlace por WhatsApp en este momento.",
+            }, status=502)

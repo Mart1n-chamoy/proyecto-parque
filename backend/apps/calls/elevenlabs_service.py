@@ -138,6 +138,11 @@ class ElevenLabsService:
                             "name":     r.get("name", "Cliente"),
                             "amount":   str(r.get("amount", "")),
                             "currency": r.get("currency", "ARS"),
+                            # Para que el tool "enviar_enlace_pago" sepa a qué
+                            # número mandar el link cuando la llamada la
+                            # iniciamos nosotros (outbound). En llamadas
+                            # entrantes, el agente usa system__caller_id.
+                            "client_phone": r["phone_number"],
                         },
                         "conversation_config_override": {
                             "agent": {

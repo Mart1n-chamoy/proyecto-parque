@@ -397,6 +397,7 @@ def process_whatsapp_batch(self, batch_id: int):
             "name":     f"{client.first_name} {client.last_name}".strip() or "Cliente",
             "amount":   str(client.debt_amount or ""),
             "currency": getattr(client, "currency", "ARS"),
+            "client_phone": client.phone,
         }
 
         call.status = "in_progress"
@@ -481,6 +482,7 @@ def retry_failed_whatsapp(self, call_id: int):
         "name":     f"{client.first_name} {client.last_name}".strip() or "Cliente",
         "amount":   str(client.debt_amount or ""),
         "currency": getattr(client, "currency", "ARS"),
+        "client_phone": client.phone,
     }
 
     try:

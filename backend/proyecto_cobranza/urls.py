@@ -2,7 +2,7 @@ from django.contrib import admin
 from django.urls import path, include
 from django.conf import settings
 from django.conf.urls.static import static
-from apps.calls.webhook_views import ElevenLabsWebhookView
+from apps.calls.webhook_views import ElevenLabsWebhookView, SendPaymentLinkToolView
 
 urlpatterns = [
     # Dashboard web — va primero para que '/' muestre el panel
@@ -16,6 +16,7 @@ urlpatterns = [
     # Admin y webhooks
     path('gestion-cobranza/', admin.site.urls),
     path('webhooks/elevenlabs/', ElevenLabsWebhookView.as_view()),
+    path('webhooks/send-payment-link/', SendPaymentLinkToolView.as_view()),
 ]
 
 if settings.DEBUG:
