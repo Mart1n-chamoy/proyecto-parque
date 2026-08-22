@@ -384,12 +384,17 @@ def process_whatsapp_batch(self, batch_id: int):
             logger.warning(f"Cliente {client.id} sin teléfono, omitiendo")
             continue
 
-        # NOTA: plantilla01 y plantilla03 (las únicas aprobadas hoy en Meta)
-        # no tienen variables {{1}}, {{2}}, así que no mandamos template_params.
-        # Cuando exista un template con variables (ej: nombre + monto + vencimiento),
-        # reemplazar esta lista por los valores reales en el orden del template:
-        #   template_params = [f"{client.first_name} {client.last_name}".strip(), str(client.debt_amount or "")]
-        template_params = []
+        # Algunos templates no tienen variables (plantilla01/03, de las
+        # primeras pruebas) y otros sí (recordatorio_deuda_cobranzas, que
+        # espera {{1}}=nombre y {{2}}=monto). Se elige según el nombre
+        # del template configurado en esta campaña.
+        if batch.whatsapp_template_name == "recordatorio_deuda_cobranzas":
+            template_params = [
+                f"{client.first_name} {client.last_name}".strip() or "Cliente",
+                str(client.debt_amount or ""),
+            ]
+        else:
+            template_params = []
 
         # Estas sí son necesarias siempre: las usa el first_message/prompt
         # del agente (mismas variables que en create_batch() para llamadas).
@@ -474,9 +479,15 @@ def retry_failed_whatsapp(self, call_id: int):
         logger.error(f"CallBatch {batch.id} no tiene whatsapp_template_name configurado")
         return
 
-    # NOTA: plantilla01 y plantilla03 no tienen variables. Ver comentario
-    # equivalente en process_whatsapp_batch si agregan un template con {{1}}, {{2}}...
-    template_params = []
+    # Mismo criterio que en process_whatsapp_batch: recordatorio_deuda_cobranzas
+    # tiene variables, los templates viejos (plantilla01/03) no.
+    if batch.whatsapp_template_name == "recordatorio_deuda_cobranzas":
+        template_params = [
+            f"{client.first_name} {client.last_name}".strip() or "Cliente",
+            str(client.debt_amount or ""),
+        ]
+    else:
+        template_params = []
 
     dynamic_variables = {
         "name":     f"{client.first_name} {client.last_name}".strip() or "Cliente",

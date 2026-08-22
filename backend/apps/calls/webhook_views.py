@@ -144,7 +144,7 @@ ELEVENLABS_TOOL_SECRET = os.getenv("ELEVENLABS_TOOL_SECRET", "")
 # los clientes (se identifican con su DNI en el portal), así que el
 # template no necesita variables.
 PAYMENT_LINK_TEMPLATE_NAME = os.getenv("WHATSAPP_PAYMENT_LINK_TEMPLATE", "enlace_pago_cobranzas")
-PAYMENT_LINK_TEMPLATE_LANGUAGE = "es"
+PAYMENT_LINK_TEMPLATE_LANGUAGE = os.getenv("WHATSAPP_PAYMENT_LINK_TEMPLATE_LANGUAGE", "es_AR")
 
 
 @method_decorator(csrf_exempt, name="dispatch")
