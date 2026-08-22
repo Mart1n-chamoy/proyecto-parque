@@ -157,14 +157,55 @@ class SendPaymentLinkToolView(View):
     que estén hablando por WhatsApp o por una llamada de voz.
 
     Body esperado (JSON):
-        {"phone_number": "+5492616410756"}
+        {"conversation_id": "conv_xxxxx"}
 
-    Configurar en ElevenLabs → Agente → Tools → Add tool → Webhook:
+    OJO: usamos conversation_id (no el número de teléfono directo) a
+    propósito. Probamos pedirle a la IA que escriba el número tomándolo
+    de system__caller_id / client_phone / etc., y en la práctica el
+    modelo terminaba mandando el texto literal "{{system__caller_id}}"
+    en vez del valor real — la sintaxis {{...}} solo se resuelve
+    automáticamente en otros campos (como el primer mensaje), no cuando
+    el LLM arma los argumentos de un tool call.
+
+    La forma confiable: el parámetro conversation_id se configura en
+    ElevenLabs con "Tipo de valor" = Dynamic Variable (no "LLM Prompt"),
+    apuntando a system__conversation_id. Así lo resuelve la propia
+    plataforma, sin pasar por el razonamiento del modelo. Nosotros
+    después buscamos el teléfono real consultando la conversación.
+
+    Configurar en ElevenLabs → Agente → Tools → enviar_enlace_pago:
         URL:     https://tu-dominio.com/webhooks/send-payment-link/
         Método:  POST
         Headers: X-Tool-Secret: <mismo valor que ELEVENLABS_TOOL_SECRET>
-        Body:    {"phone_number": "{{el número, ver instrucciones en el prompt}}"}
+        Body → parámetro "conversation_id":
+            Tipo de dato: String
+            Tipo de valor: Dynamic Variable → system__conversation_id
     """
+
+    @staticmethod
+    def _extract_phone_number(conversation: dict) -> str | None:
+        """
+        Busca el número de teléfono/WhatsApp del cliente en la respuesta
+        de GET /v1/convai/conversations/{id}. Prueba varios campos porque
+        la forma exacta cambia según el canal (WhatsApp vs llamada).
+        """
+        metadata = conversation.get("metadata") or {}
+
+        whatsapp_meta = metadata.get("whatsapp") or {}
+        if whatsapp_meta.get("whatsapp_user_id"):
+            return whatsapp_meta["whatsapp_user_id"]
+
+        phone_call_meta = metadata.get("phone_call") or {}
+        for key in ("external_number", "caller_number", "from_number", "phone_number"):
+            if phone_call_meta.get(key):
+                return phone_call_meta[key]
+
+        # Fallback universal: en los casos que probamos, coincide con el
+        # número real tanto para WhatsApp como (previsiblemente) llamadas.
+        if conversation.get("user_id"):
+            return conversation["user_id"]
+
+        return None
 
     def post(self, request):
         # Verificación del secreto compartido — sin esto, cualquiera que
@@ -187,13 +228,32 @@ class SendPaymentLinkToolView(View):
         except json.JSONDecodeError:
             return JsonResponse({"success": False, "error": "invalid_json"}, status=400)
 
-        phone_number = (payload.get("phone_number") or "").strip()
-        if not phone_number:
+        conversation_id = (payload.get("conversation_id") or "").strip()
+        if not conversation_id:
             return JsonResponse(
-                {"success": False, "error": "falta phone_number"}, status=400
+                {"success": False, "error": "falta conversation_id"}, status=400
             )
 
         from apps.calls.elevenlabs_service import elevenlabs_service
+
+        try:
+            conversation = elevenlabs_service.get_conversation(conversation_id)
+        except Exception as exc:
+            logger.error(f"Error consultando conversación {conversation_id}: {exc}")
+            return JsonResponse({
+                "success": False,
+                "error": "No pude consultar los datos de la conversación.",
+            }, status=502)
+
+        phone_number = self._extract_phone_number(conversation)
+        if not phone_number:
+            logger.error(
+                f"No se encontró número de teléfono en la conversación {conversation_id}"
+            )
+            return JsonResponse({
+                "success": False,
+                "error": "No encontré el número de teléfono del cliente en esta conversación.",
+            }, status=422)
 
         try:
             elevenlabs_service.send_whatsapp_message(
