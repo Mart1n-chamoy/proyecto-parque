@@ -23,7 +23,7 @@
   <div style="display: flex; align-items: center; gap: 12px;">
     <span style="color: var(--muted); font-size: 13px;">Actualizando cada 30s...</span>
     <button class="btn btn-secondary btn-sm"
-            hx-get="/campaigns/{{ batch.id }}/status/"
+            hx-get="/campaigns/{{ batch.id }}/status/?page={{ page_obj.number }}"
             hx-target="#calls-table"
             hx-swap="outerHTML"
             hx-trigger="every 30s">
@@ -62,7 +62,7 @@
     {% endif %}
   </div>
 
-  {% if calls %}
+  {% if page_obj.object_list %}
   <table>
     <thead>
       <tr>
@@ -76,7 +76,7 @@
       </tr>
     </thead>
     <tbody>
-      {% for call in calls %}
+      {% for call in page_obj.object_list %}
       <tr>
         <td style="font-weight: 500;">{{ call.client.first_name }} {{ call.client.last_name }}</td>
         <td style="color: var(--muted);">{{ call.client.phone }}</td>
@@ -94,8 +94,7 @@
         <td style="color: var(--muted); font-size: 12px;">{{ call.outcome|default:"—" }}</td>
         <td>
           {% if call.transcript %}
-          <button class="btn btn-secondary btn-sm"
-                  onclick="openTranscript('{{ call.id }}', `{{ call.transcript|escapejs }}`, '{{ call.audio_file }}')">
+          <button class="btn btn-secondary btn-sm" onclick="openTranscript({{ call.id }})">
             Ver
           </button>
           {% endif %}
@@ -104,6 +103,22 @@
       {% endfor %}
     </tbody>
   </table>
+
+  <!-- PAGINACIÓN -->
+  {% if page_obj.paginator.num_pages > 1 %}
+  <div style="display:flex; justify-content:center; align-items:center; gap:8px; margin-top:16px; padding: 0 0 16px;">
+    {% if page_obj.has_previous %}
+      <a class="btn btn-secondary btn-sm" href="?page={{ page_obj.previous_page_number }}">← Anterior</a>
+    {% endif %}
+    <span style="color:var(--muted); font-size:13px;">
+      Página {{ page_obj.number }} de {{ page_obj.paginator.num_pages }}
+      ({{ page_obj.paginator.count }} llamada{{ page_obj.paginator.count|pluralize }} en total)
+    </span>
+    {% if page_obj.has_next %}
+      <a class="btn btn-secondary btn-sm" href="?page={{ page_obj.next_page_number }}">Siguiente →</a>
+    {% endif %}
+  </div>
+  {% endif %}
   {% else %}
   <div style="text-align: center; padding: 40px; color: var(--muted);">
     <p>No hay llamadas registradas todavía.</p>
@@ -125,13 +140,27 @@
 </div>
 
 <script>
-function openTranscript(callId, transcript, audioFile) {
+async function openTranscript(callId) {
   const modal = document.getElementById('modal');
   const transcriptDiv = document.getElementById('modal-transcript');
   const audioDiv = document.getElementById('modal-audio');
 
+  transcriptDiv.innerHTML = '<p style="color: var(--muted);">Cargando...</p>';
+  audioDiv.innerHTML = '';
+  modal.classList.add('open');
+
+  let data;
+  try {
+    const resp = await fetch(`/campaigns/{{ batch.id }}/calls/${callId}/transcript/`);
+    if (!resp.ok) throw new Error('No se pudo cargar la transcripción');
+    data = await resp.json();
+  } catch (err) {
+    transcriptDiv.innerHTML = '<p style="color: var(--red);">No se pudo cargar la transcripción.</p>';
+    return;
+  }
+
   // Formatear transcript
-  const lines = transcript.split('\n');
+  const lines = (data.transcript || '').split('\n');
   transcriptDiv.innerHTML = lines.map(line => {
     if (line.startsWith('Agente:')) {
       return `<p class="turn-agent">${line}</p>`;
@@ -142,13 +171,9 @@ function openTranscript(callId, transcript, audioFile) {
   }).join('');
 
   // Audio
-  if (audioFile) {
-    audioDiv.innerHTML = `<audio controls style="width:100%"><source src="/media/${audioFile}"></audio>`;
-  } else {
-    audioDiv.innerHTML = '';
+  if (data.audio_file) {
+    audioDiv.innerHTML = `<audio controls style="width:100%"><source src="/media/${data.audio_file}"></audio>`;
   }
-
-  modal.classList.add('open');
 }
 
 function closeModal(event) {
@@ -156,10 +181,5 @@ function closeModal(event) {
     document.getElementById('modal').classList.remove('open');
   }
 }
-
-// Auto-refresh si el lote está procesando
-{% if batch.status == 'processing' %}
-setTimeout(() => location.reload(), 30000);
-{% endif %}
 </script>
 {% endblock %}

@@ -262,19 +262,26 @@ class CampaignNewView(LoginRequiredMixin,View):
 
 
 class CampaignDetailView(LoginRequiredMixin, View):
-    """GET /campaigns/{id}/ — detalle de campaña con llamadas"""
+    """GET /campaigns/{id}/ — detalle de campaña con llamadas (paginado)"""
+
+    PAGE_SIZE = 50
 
     def get(self, request, pk):
-        batch = get_object_or_404(CallBatch, pk=pk)
-        calls = Call.objects.filter(batch=batch).select_related("client").order_by("id")
+        from django.core.paginator import Paginator
 
-        completed = calls.filter(status="completed").count()
-        failed    = calls.filter(status="failed").count()
-        pending   = calls.filter(status__in=["pending", "in_progress"]).count()
+        batch = get_object_or_404(CallBatch, pk=pk)
+        calls_qs = Call.objects.filter(batch=batch).select_related("client").order_by("id")
+
+        completed = calls_qs.filter(status="completed").count()
+        failed    = calls_qs.filter(status="failed").count()
+        pending   = calls_qs.filter(status__in=["pending", "in_progress"]).count()
+
+        paginator = Paginator(calls_qs, self.PAGE_SIZE)
+        page_obj = paginator.get_page(request.GET.get("page"))
 
         return render(request, "dashboard/campaign_detail.html", {
             "batch": batch,
-            "calls": calls,
+            "page_obj": page_obj,
             "stats": {
                 "completed": completed,
                 "failed":    failed,
@@ -303,24 +310,47 @@ class CampaignLaunchView(LoginRequiredMixin, View):
 
 
 class CampaignStatusView(LoginRequiredMixin, View):
-    """GET /campaigns/{id}/status/ — fragmento HTMX con tabla actualizada"""
+    """GET /campaigns/{id}/status/ — fragmento HTMX con tabla actualizada (paginado)"""
 
     def get(self, request, pk):
-        batch = get_object_or_404(CallBatch, pk=pk)
-        calls = Call.objects.filter(batch=batch).select_related("client").order_by("id")
+        from django.core.paginator import Paginator
 
-        completed = calls.filter(status="completed").count()
-        failed    = calls.filter(status="failed").count()
-        pending   = calls.filter(status__in=["pending", "in_progress"]).count()
+        batch = get_object_or_404(CallBatch, pk=pk)
+        calls_qs = Call.objects.filter(batch=batch).select_related("client").order_by("id")
+
+        completed = calls_qs.filter(status="completed").count()
+        failed    = calls_qs.filter(status="failed").count()
+        pending   = calls_qs.filter(status__in=["pending", "in_progress"]).count()
+
+        paginator = Paginator(calls_qs, CampaignDetailView.PAGE_SIZE)
+        page_obj = paginator.get_page(request.GET.get("page"))
 
         return render(request, "dashboard/campaign_detail.html", {
             "batch": batch,
-            "calls": calls,
+            "page_obj": page_obj,
             "stats": {
                 "completed": completed,
                 "failed":    failed,
                 "pending":   pending,
             },
+        })
+
+
+class CallTranscriptView(LoginRequiredMixin, View):
+    """
+    GET /campaigns/{batch_id}/calls/{call_id}/transcript/
+
+    Devuelve la transcripción y el audio de UNA llamada puntual, en JSON.
+    Antes esto viajaba incrustado en cada fila de la tabla (mandaba las
+    1000 transcripciones en el HTML inicial aunque estuvieran ocultas);
+    ahora se pide solo la que el usuario quiere ver, al hacer clic.
+    """
+
+    def get(self, request, batch_id, call_id):
+        call = get_object_or_404(Call, pk=call_id, batch_id=batch_id)
+        return JsonResponse({
+            "transcript": call.transcript or "",
+            "audio_file": str(call.audio_file) if call.audio_file else "",
         })
 
 """
