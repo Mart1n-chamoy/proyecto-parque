@@ -15,6 +15,7 @@ Requisito: Celery + Redis ya configurados en proyecto_cobranza/celery.py
 
 import os
 import logging
+from datetime import timedelta
 from celery import shared_task
 from django.utils import timezone
 
@@ -116,9 +117,25 @@ def check_batch_completion():
 
     Cuando un lote completa, lanza fetch_call_results() para cada
     llamada finalizada.
+
+    IMPORTANTE: ElevenLabs a veces marca el lote como "completed" a
+    nivel general un instante antes de que los datos de CADA
+    destinatario individual (conversation_id, status) terminen de
+    asentarse del lado de ellos. Si en ese momento dábamos el lote
+    por cerrado (como hacía la versión anterior), dejábamos de
+    consultarlo para siempre y esos destinatarios quedaban
+    "in_progress" eternamente, aunque un minuto después ElevenLabs ya
+    tuviera el dato completo. Por eso ahora NO cerramos el batch hasta
+    confirmar que TODOS los destinatarios esperados tienen un estado
+    final — si falta alguno, seguimos revisando en el próximo ciclo.
     """
     from apps.calls.models import CallBatch
     from apps.calls.elevenlabs_service import elevenlabs_service
+
+    # Máximo tiempo que dejamos un lote reintentando esta verificación
+    # antes de cerrarlo igual (evita que un lote quede "processing" para
+    # siempre por un dato que ElevenLabs nunca termina de entregar).
+    MAX_WAIT = timedelta(hours=3)
 
     batches_en_curso = CallBatch.objects.filter(status="processing")
 
@@ -136,48 +153,106 @@ def check_batch_completion():
             logger.error(f"Error consultando lote {batch.elevenlabs_batch_id}: {exc}")
             continue
 
-        el_status = el_batch.get("status", "")
+        el_status  = el_batch.get("status", "")
         calls_data = el_batch.get("recipients", el_batch.get("call_recipients", []))
 
-        # Procesar cada llamada individual del lote
+        # OJO: los únicos valores de "status" por destinatario que
+        # confirmamos viendo datos reales son "completed" y "failed".
+        # No inventamos strings como "no-answer"/"busy"/"voicemail" acá
+        # porque no tenemos evidencia de que ElevenLabs los use — si
+        # una llamada no fue atendida, hasta ahora la vimos reportada
+        # igual como "completed" (el resultado real, si fue voicemail,
+        # se determina después analizando la transcripción, no acá).
+        # Si en la práctica aparece algún otro valor, avisame y lo sumamos.
+        entries_con_estado_final = 0
+
+        # Un solo recorrido (antes había dos, y disparaba la tarea dos
+        # veces para las mismas llamadas).
         for call_data in calls_data:
             conv_id     = call_data.get("conversation_id")
             call_status = call_data.get("status")
-            phone       = call_data.get("phone_number","")
+            phone       = call_data.get("phone_number", "")
 
             if phone and not phone.startswith("+"):
                 phone = "+" + phone
+
             if call_status == "completed" and conv_id:
+                entries_con_estado_final += 1
                 fetch_call_results.delay(
                     el_conversation_id=conv_id,
                     phone_number=phone,
                     batch_id=batch.id,
                 )
+            elif call_status == "failed":
+                entries_con_estado_final += 1
+                _mark_call_terminal_without_conversation(
+                    batch_id=batch.id, phone_number=phone, outcome="failed",
+                )
 
-        # Si el lote completo terminó, actualizar el BatchCall
-        if el_status in ("completed", "done", "finished"):
-            batch.status = "completed"
-            # Asegurarse de disparar fetch para todas las llamadas completadas
-            for call_data in calls_data:
-                conv_id = call_data.get("conversation_id")
-                call_status = call_data.get("status")
-                phone = call_data.get("phone_number", "")
-                if not phone.startswith("+"):
-                    phone = "+" + phone
-                if call_status == "completed" and conv_id:
-                    fetch_call_results.delay(
-                        el_conversation_id=conv_id,
-                        phone_number=phone,
-                        batch_id=batch.id,
-                    )
-            batch.completed_at = timezone.now()
-            batch.save(update_fields=["status", "completed_at"])
-            logger.info(f"BatchCall {batch.id} completado")
+        # ¿Ya tenemos un resultado final para todos los destinatarios
+        # esperados? Si ElevenLabs todavía no terminó de entregar los
+        # datos de alguno, NO cerramos el lote — se vuelve a revisar
+        # en el próximo ciclo (5 min).
+        todos_resueltos = (
+            len(calls_data) > 0 and entries_con_estado_final >= batch.total_clients
+        )
+        vencido = timezone.now() - batch.created_at > MAX_WAIT
 
-        elif el_status == "failed":
+        if el_status == "failed":
             batch.status = "failed"
             batch.save(update_fields=["status"])
             logger.warning(f"BatchCall {batch.id} falló en ElevenLabs")
+
+        elif el_status in ("completed", "done", "finished") and (todos_resueltos or vencido):
+            batch.status = "completed"
+            batch.completed_at = timezone.now()
+            batch.save(update_fields=["status", "completed_at"])
+            if vencido and not todos_resueltos:
+                logger.warning(
+                    f"BatchCall {batch.id} cerrado por timeout de {MAX_WAIT} "
+                    f"con destinatarios sin resolver ({entries_con_estado_final}/{batch.total_clients})"
+                )
+            else:
+                logger.info(f"BatchCall {batch.id} completado ({entries_con_estado_final}/{batch.total_clients})")
+
+        elif el_status in ("completed", "done", "finished"):
+            # El lote general ya terminó pero todavía faltan datos de
+            # algunos destinatarios — lo dejamos "processing" a propósito.
+            logger.info(
+                f"BatchCall {batch.id}: ElevenLabs dice completado pero solo "
+                f"{entries_con_estado_final}/{batch.total_clients} destinatarios tienen "
+                f"estado final. Se vuelve a revisar en el próximo ciclo."
+            )
+
+
+def _mark_call_terminal_without_conversation(batch_id: int, phone_number: str, outcome: str):
+    """
+    Marca una Call como resuelta cuando ElevenLabs reporta un estado final
+    que no generó conversación (no atendió, ocupado, etc.) — sin esto,
+    esas llamadas quedaban "in_progress" para siempre porque solo
+    fetch_call_results() actualizaba el status, y esa función solo se
+    dispara para llamadas con status "completed".
+    """
+    from apps.calls.models import Call, CallBatch
+
+    try:
+        batch = CallBatch.objects.get(id=batch_id)
+        phone_variants = [phone_number, phone_number.lstrip("+")]
+        call = Call.objects.get(batch=batch, client__phone__in=phone_variants)
+    except (CallBatch.DoesNotExist, Call.DoesNotExist, Call.MultipleObjectsReturned):
+        logger.error(
+            f"No se encontró Call para marcar como '{outcome}' "
+            f"(batch={batch_id}, phone={phone_number})"
+        )
+        return
+
+    if call.status != "in_progress":
+        return  # ya fue procesada por otro camino, no pisar
+
+    call.status = "failed"
+    call.outcome = outcome
+    call.completed_at = timezone.now()
+    call.save(update_fields=["status", "outcome", "completed_at"])
 
 
 # ─────────────────────────────────────────────────────────────────
