@@ -325,7 +325,7 @@ class CampaignStatusView(LoginRequiredMixin, View):
         paginator = Paginator(calls_qs, CampaignDetailView.PAGE_SIZE)
         page_obj = paginator.get_page(request.GET.get("page"))
 
-        return render(request, "dashboard/campaign_detail.html", {
+        return render(request, "dashboard/_campaign_calls_table.html", {
             "batch": batch,
             "page_obj": page_obj,
             "stats": {

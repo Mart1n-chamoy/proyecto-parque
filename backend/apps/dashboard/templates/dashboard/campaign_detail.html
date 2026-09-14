@@ -54,77 +54,7 @@
 </div>
 
 <!-- TABLA DE LLAMADAS -->
-<div class="card" id="calls-table">
-  <div class="card-header">
-    <span class="card-title">Llamadas del lote</span>
-    {% if batch.elevenlabs_batch_id %}
-    <span style="font-size: 11px; color: var(--muted);">EL ID: {{ batch.elevenlabs_batch_id }}</span>
-    {% endif %}
-  </div>
-
-  {% if page_obj.object_list %}
-  <table>
-    <thead>
-      <tr>
-        <th>Cliente</th>
-        <th>Teléfono</th>
-        <th>Deuda</th>
-        <th>Estado</th>
-        <th>{% if batch.channel == 'whatsapp' %}Canal{% else %}Duración{% endif %}</th>
-        <th>Resultado</th>
-        <th></th>
-      </tr>
-    </thead>
-    <tbody>
-      {% for call in page_obj.object_list %}
-      <tr>
-        <td style="font-weight: 500;">{{ call.client.first_name }} {{ call.client.last_name }}</td>
-        <td style="color: var(--muted);">{{ call.client.phone }}</td>
-        <td>${{ call.client.debt_amount|default:"-" }}</td>
-        <td><span class="badge badge-{{ call.status }}">{{ call.get_status_display }}</span></td>
-        <td style="color: var(--muted);">
-          {% if call.channel == 'whatsapp' %}
-            💬 WhatsApp
-          {% elif call.duration %}
-            {{ call.duration }}s
-          {% else %}
-            —
-          {% endif %}
-        </td>
-        <td style="color: var(--muted); font-size: 12px;">{{ call.outcome|default:"—" }}</td>
-        <td>
-          {% if call.transcript %}
-          <button class="btn btn-secondary btn-sm" onclick="openTranscript({{ call.id }})">
-            Ver
-          </button>
-          {% endif %}
-        </td>
-      </tr>
-      {% endfor %}
-    </tbody>
-  </table>
-
-  <!-- PAGINACIÓN -->
-  {% if page_obj.paginator.num_pages > 1 %}
-  <div style="display:flex; justify-content:center; align-items:center; gap:8px; margin-top:16px; padding: 0 0 16px;">
-    {% if page_obj.has_previous %}
-      <a class="btn btn-secondary btn-sm" href="?page={{ page_obj.previous_page_number }}">← Anterior</a>
-    {% endif %}
-    <span style="color:var(--muted); font-size:13px;">
-      Página {{ page_obj.number }} de {{ page_obj.paginator.num_pages }}
-      ({{ page_obj.paginator.count }} llamada{{ page_obj.paginator.count|pluralize }} en total)
-    </span>
-    {% if page_obj.has_next %}
-      <a class="btn btn-secondary btn-sm" href="?page={{ page_obj.next_page_number }}">Siguiente →</a>
-    {% endif %}
-  </div>
-  {% endif %}
-  {% else %}
-  <div style="text-align: center; padding: 40px; color: var(--muted);">
-    <p>No hay llamadas registradas todavía.</p>
-  </div>
-  {% endif %}
-</div>
+{% include "dashboard/_campaign_calls_table.html" %}
 
 <!-- MODAL TRANSCRIPCIÓN -->
 <div class="modal-overlay" id="modal" onclick="closeModal(event)">
