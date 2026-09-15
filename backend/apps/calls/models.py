@@ -116,6 +116,10 @@ class Call(models.Model):
         max_length=200, blank=True, null=True,
         help_text="ID del mensaje de WhatsApp devuelto por ElevenLabs (solo channel='whatsapp')"
     )
+    payment_link_sent_at = models.DateTimeField(
+        blank=True, null=True,
+        help_text="Cuándo se mandó automáticamente el enlace de pago por WhatsApp al cerrar esta llamada"
+    )
     completed_at = models.DateTimeField(
         blank=True, null=True
     )

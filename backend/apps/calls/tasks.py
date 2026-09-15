@@ -225,6 +225,43 @@ def check_batch_completion():
             )
 
 
+def _send_automatic_payment_link(call):
+    """
+    Manda automáticamente el enlace de pago por WhatsApp al cerrar una
+    llamada telefónica — sin importar el resultado (atendida, buzón de
+    voz, o falló tipo SIP). Solo aplica a channel="call" (las campañas
+    de WhatsApp ya tienen el link disponible vía el tool del agente
+    durante la propia conversación, no hace falta mandarlo de nuevo acá).
+
+    Protegido contra reenvíos: si call.payment_link_sent_at ya tiene
+    valor, no manda de nuevo.
+    """
+    if call.channel != "call":
+        return
+    if call.payment_link_sent_at:
+        return
+    if not call.client.phone:
+        return
+
+    from apps.calls.elevenlabs_service import elevenlabs_service
+    from apps.calls.webhook_views import PAYMENT_LINK_TEMPLATE_NAME, PAYMENT_LINK_TEMPLATE_LANGUAGE
+
+    try:
+        elevenlabs_service.send_whatsapp_message(
+            phone_number=call.client.phone,
+            template_name=PAYMENT_LINK_TEMPLATE_NAME,
+            template_language=PAYMENT_LINK_TEMPLATE_LANGUAGE,
+            template_params=[],
+        )
+        call.payment_link_sent_at = timezone.now()
+        call.save(update_fields=["payment_link_sent_at"])
+        logger.info(f"Enlace de pago automático enviado para Call {call.id} ({call.client.phone})")
+    except Exception as exc:
+        # No queremos que un fallo acá tumbe el cierre de la llamada
+        # (que ya se guardó bien); solo lo dejamos anotado en el log.
+        logger.error(f"Error enviando enlace de pago automático para Call {call.id}: {exc}")
+
+
 def _mark_call_terminal_without_conversation(batch_id: int, phone_number: str, outcome: str):
     """
     Marca una Call como resuelta cuando ElevenLabs reporta un estado final
@@ -253,6 +290,8 @@ def _mark_call_terminal_without_conversation(batch_id: int, phone_number: str, o
     call.outcome = outcome
     call.completed_at = timezone.now()
     call.save(update_fields=["status", "outcome", "completed_at"])
+
+    _send_automatic_payment_link(call)
 
 
 # ─────────────────────────────────────────────────────────────────
@@ -334,6 +373,8 @@ def fetch_call_results(self, el_conversation_id: str, phone_number: str, batch_i
         call.save()
 
         logger.info(f"Resultados guardados para Call {call.id} (conv: {el_conversation_id})")
+
+        _send_automatic_payment_link(call)
 
     except Exception as exc:
         logger.error(f"Error obteniendo resultados de conversación {el_conversation_id}: {exc}")
