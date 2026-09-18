@@ -145,6 +145,13 @@ ELEVENLABS_TOOL_SECRET = os.getenv("ELEVENLABS_TOOL_SECRET", "")
 # template no necesita variables.
 PAYMENT_LINK_TEMPLATE_NAME = os.getenv("WHATSAPP_PAYMENT_LINK_TEMPLATE", "enlace_pago_cobranzas")
 PAYMENT_LINK_TEMPLATE_LANGUAGE = os.getenv("WHATSAPP_PAYMENT_LINK_TEMPLATE_LANGUAGE", "es_AR")
+# Header de imagen del template enlace_pago_cobranzas (logo de Parque de
+# Descanso). Se manda en CADA envío, no alcanza con haberla subido una
+# sola vez al crear el template en Meta.
+PAYMENT_LINK_HEADER_IMAGE_URL = os.getenv(
+    "WHATSAPP_PAYMENT_LINK_HEADER_IMAGE_URL",
+    "https://comercialsl.com/static/dashboard/img/parque-descanso-header.png",
+)
 
 
 @method_decorator(csrf_exempt, name="dispatch")
@@ -261,6 +268,7 @@ class SendPaymentLinkToolView(View):
                 template_name=PAYMENT_LINK_TEMPLATE_NAME,
                 template_language=PAYMENT_LINK_TEMPLATE_LANGUAGE,
                 template_params=[],
+                header_image_url=PAYMENT_LINK_HEADER_IMAGE_URL,
             )
             logger.info(f"Enlace de pago enviado por WhatsApp a {phone_number}")
             return JsonResponse({

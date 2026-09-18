@@ -244,7 +244,11 @@ def _send_automatic_payment_link(call):
         return
 
     from apps.calls.elevenlabs_service import elevenlabs_service
-    from apps.calls.webhook_views import PAYMENT_LINK_TEMPLATE_NAME, PAYMENT_LINK_TEMPLATE_LANGUAGE
+    from apps.calls.webhook_views import (
+        PAYMENT_LINK_TEMPLATE_NAME,
+        PAYMENT_LINK_TEMPLATE_LANGUAGE,
+        PAYMENT_LINK_HEADER_IMAGE_URL,
+    )
 
     try:
         elevenlabs_service.send_whatsapp_message(
@@ -252,6 +256,7 @@ def _send_automatic_payment_link(call):
             template_name=PAYMENT_LINK_TEMPLATE_NAME,
             template_language=PAYMENT_LINK_TEMPLATE_LANGUAGE,
             template_params=[],
+            header_image_url=PAYMENT_LINK_HEADER_IMAGE_URL,
         )
         call.payment_link_sent_at = timezone.now()
         call.save(update_fields=["payment_link_sent_at"])

@@ -210,6 +210,7 @@ class ElevenLabsService:
         template_language: str = "es",
         template_params: Optional[list] = None,
         dynamic_variables: Optional[dict] = None,
+        header_image_url: Optional[str] = None,
     ) -> dict:
         """
         POST /v1/convai/whatsapp/outbound-message
@@ -217,13 +218,23 @@ class ElevenLabsService:
         Envía un mensaje de WhatsApp usando un template aprobado en Meta.
 
         template_params: lista simple de valores en el orden de las
-        variables {{1}}, {{2}}, ... del template (ej: ["Martín", "15000"]).
-        Si el template no tiene variables, pasar [] o None.
+        variables {{1}}, {{2}}, ... del CUERPO del template (ej:
+        ["Martín", "15000"]). Si el template no tiene variables en el
+        cuerpo, pasar [] o None.
 
-        La API de ElevenLabs espera esta lista envuelta en la forma:
-            [{"parameters": [{"text": "Martín"}, {"text": "15000"}]}]
-        Ese envoltorio se arma acá adentro para que quien llama a este
-        método solo tenga que pensar en los valores, no en el esquema.
+        header_image_url: URL pública (https) de la imagen a usar en el
+        encabezado, SOLO si el template tiene un header de tipo imagen
+        parametrizado (ej: enlace_pago_cobranzas). Si el template no
+        tiene header de imagen, dejar en None.
+
+        La API de ElevenLabs espera template_params como una lista de
+        "componentes", uno por cada parte del template que tenga
+        variables:
+            [{"type": "header", "parameters": [{"type": "image", "image": {"link": "..."}}]},
+             {"parameters": [{"text": "Martín"}, {"text": "15000"}]}]
+        (el formato de "parameters" del cuerpo, sin "type" en cada
+        valor, es el que ya veníamos usando y sigue funcionando igual
+        que antes — el header es lo único nuevo acá).
 
         dynamic_variables: variables que necesita el first_message /
         prompt del agente (ej: name, amount, currency). Son las mismas
@@ -240,10 +251,18 @@ class ElevenLabsService:
             raise ValueError("Falta template_name (debe estar aprobado en Meta)")
 
         values = template_params or []
-        wrapped_params = (
-            [{"parameters": [{"text": str(v)} for v in values]}]
-            if values else []
-        )
+        components = []
+
+        if header_image_url:
+            components.append({
+                "type": "header",
+                "parameters": [
+                    {"type": "image", "image": {"link": header_image_url}}
+                ],
+            })
+
+        if values:
+            components.append({"parameters": [{"text": str(v)} for v in values]})
 
         payload = {
             "agent_id":                 self.agent_id,
@@ -251,7 +270,7 @@ class ElevenLabsService:
             "whatsapp_user_id":         self._whatsapp_user_id(phone_number),
             "template_name":            template_name,
             "template_language_code":   template_language,
-            "template_params":          wrapped_params,
+            "template_params":          components,
         }
 
         if dynamic_variables:
