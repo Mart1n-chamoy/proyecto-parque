@@ -517,6 +517,14 @@ def process_whatsapp_batch(self, batch_id: int):
         else:
             template_params = []
 
+        # enlace_pago_cobranzas tiene un header de imagen parametrizado
+        # (el logo) — hay que mandarlo en cada envío, no alcanza con
+        # haberlo subido una vez al crear el template en Meta.
+        header_image_url = None
+        if batch.whatsapp_template_name == "enlace_pago_cobranzas":
+            from apps.calls.webhook_views import PAYMENT_LINK_HEADER_IMAGE_URL
+            header_image_url = PAYMENT_LINK_HEADER_IMAGE_URL
+
         # Estas sí son necesarias siempre: las usa el first_message/prompt
         # del agente (mismas variables que en create_batch() para llamadas).
         dynamic_variables = {
@@ -537,6 +545,7 @@ def process_whatsapp_batch(self, batch_id: int):
                 template_language=batch.whatsapp_template_language or "es",
                 template_params=template_params,
                 dynamic_variables=dynamic_variables,
+                header_image_url=header_image_url,
             )
             call.whatsapp_message_id = result.get("message_id") or result.get("id")
             call.status = "completed"
@@ -610,6 +619,11 @@ def retry_failed_whatsapp(self, call_id: int):
     else:
         template_params = []
 
+    header_image_url = None
+    if batch.whatsapp_template_name == "enlace_pago_cobranzas":
+        from apps.calls.webhook_views import PAYMENT_LINK_HEADER_IMAGE_URL
+        header_image_url = PAYMENT_LINK_HEADER_IMAGE_URL
+
     dynamic_variables = {
         "name":     f"{client.first_name} {client.last_name}".strip() or "Cliente",
         "amount":   str(client.debt_amount or ""),
@@ -624,6 +638,7 @@ def retry_failed_whatsapp(self, call_id: int):
             template_language=batch.whatsapp_template_language or "es",
             template_params=template_params,
             dynamic_variables=dynamic_variables,
+            header_image_url=header_image_url,
         )
         call.whatsapp_message_id = result.get("message_id") or result.get("id")
         call.status = "completed"
