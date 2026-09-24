@@ -70,11 +70,25 @@ class DashboardView(LoginRequiredMixin, View):
             "data":   json.dumps([d["total"] for d in dias_qs]),
         }
 
+        # Reporte: cantidad de llamadas por título resumen (el que arma
+        # ElevenLabs para cada conversación). OJO: como es texto libre
+        # generado por IA, va a haber varios títulos casi-iguales en vez
+        # de pocas categorías limpias — es lo esperable con este dato.
+        top_titles = (
+            Call.objects
+            .exclude(summary_title__isnull=True)
+            .exclude(summary_title="")
+            .values("summary_title")
+            .annotate(total=Count("id"))
+            .order_by("-total")[:20]
+        )
+
         return render(request, "dashboard/index.html", {
             "batches":        batches,
             "period":         period,
             "chart_duracion": chart_duracion,
             "chart_dias":     chart_dias,
+            "top_titles":     top_titles,
             "stats": {
                 "total_batches":     CallBatch.objects.count(),
                 "total_calls":       total_calls,

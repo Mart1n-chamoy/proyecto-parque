@@ -374,6 +374,7 @@ def fetch_call_results(self, el_conversation_id: str, phone_number: str, batch_i
         call.outcome         = str(outcome)
         call.status          = call_status_override
         call.duration = conv_data.get("metadata", {}).get("call_duration_secs")
+        call.summary_title   = analysis.get("call_summary_title") or ""
         call.completed_at    = timezone.now()
         call.save()
 

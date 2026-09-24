@@ -83,6 +83,40 @@
   </div>
 </div>
 
+<!-- REPORTE: LLAMADAS AGRUPADAS POR TÍTULO -->
+<div class="card" style="margin-bottom:24px;">
+  <div class="card-header">
+    <span class="card-title">Llamadas por título de resumen</span>
+  </div>
+  <p style="color: var(--muted); font-size: 12px; margin: -8px 0 12px;">
+    El título lo arma automáticamente ElevenLabs para cada conversación —
+    al ser texto libre, es normal ver varios títulos parecidos en vez de
+    pocas categorías fijas.
+  </p>
+  {% if top_titles %}
+  <table>
+    <thead>
+      <tr>
+        <th>Título</th>
+        <th style="text-align: right;">Cantidad</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for row in top_titles %}
+      <tr>
+        <td>{{ row.summary_title }}</td>
+        <td style="text-align: right; font-weight: 600;">{{ row.total }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <div style="text-align: center; padding: 24px; color: var(--muted);">
+    <p>Todavía no hay llamadas con título registrado.</p>
+  </div>
+  {% endif %}
+</div>
+
 <!-- ÚLTIMAS CAMPAÑAS -->
 <div class="card">
   <div class="card-header">

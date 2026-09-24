@@ -120,6 +120,10 @@ class Call(models.Model):
         blank=True, null=True,
         help_text="Cuándo se mandó automáticamente el enlace de pago por WhatsApp al cerrar esta llamada"
     )
+    summary_title = models.CharField(
+        max_length=255, blank=True, null=True,
+        help_text="Título resumen de la conversación generado por ElevenLabs (call_summary_title)"
+    )
     completed_at = models.DateTimeField(
         blank=True, null=True
     )

@@ -54,6 +54,7 @@
         <th>Estado</th>
         <th>Duración</th>
         <th>Resultado</th>
+        <th>Título</th>
         <th>Fecha</th>
       </tr>
     </thead>
@@ -69,6 +70,7 @@
           {% if call.channel == 'whatsapp' %}—{% elif call.duration %}{{ call.duration }}s{% else %}—{% endif %}
         </td>
         <td style="color: var(--muted);">{{ call.outcome|default:"—" }}</td>
+        <td style="color: var(--muted); font-size: 12px;">{{ call.summary_title|default:"—" }}</td>
         <td style="color: var(--muted);">{{ call.created_at|date:"d/m/Y H:i" }}</td>
       </tr>
       {% endfor %}

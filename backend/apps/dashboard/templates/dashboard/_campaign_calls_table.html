@@ -17,6 +17,7 @@
         <th>Estado</th>
         <th>{% if batch.channel == 'whatsapp' %}Canal{% else %}Duración{% endif %}</th>
         <th>Resultado</th>
+        <th>Título</th>
         <th></th>
       </tr>
     </thead>
@@ -37,6 +38,7 @@
           {% endif %}
         </td>
         <td style="color: var(--muted); font-size: 12px;">{{ call.outcome|default:"—" }}</td>
+        <td style="color: var(--muted); font-size: 12px;">{{ call.summary_title|default:"—" }}</td>
         <td>
           {% if call.transcript %}
           <button class="btn btn-secondary btn-sm" onclick="openTranscript({{ call.id }})">
