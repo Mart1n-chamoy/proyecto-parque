@@ -86,6 +86,26 @@ class ElevenLabsService:
     # ─────────────────────────────────────────────
 
     @staticmethod
+    def format_amount(amount) -> str:
+        """
+        Formatea un monto de deuda para que sea fácil de pronunciar por
+        el agente de voz y de leer en WhatsApp: sin decimales sueltos
+        (los centavos no aportan nada acá) y con separador de miles
+        estilo argentino (punto), en vez de mandar el Decimal crudo
+        (ej: "131133.59") tal cual — ese formato con punto decimal
+        confunde al modelo de texto a voz y sale como un murmullo
+        incomprensible en vez de "ciento treinta y un mil ciento
+        treinta y cuatro pesos".
+        """
+        if amount in (None, ""):
+            return ""
+        try:
+            value = int(round(float(amount)))
+        except (TypeError, ValueError):
+            return str(amount)
+        return f"{value:,}".replace(",", ".")
+
+    @staticmethod
     def build_first_message(name: str, amount: str, currency: str = "ARS") -> str:
         """
         Arma el primer mensaje ya personalizado con los datos reales del

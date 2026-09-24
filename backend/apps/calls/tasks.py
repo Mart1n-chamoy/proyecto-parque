@@ -67,7 +67,7 @@ def process_call_batch(self, batch_id: int):
         recipients.append({
             "phone_number": client.phone,   # debe ser formato E.164: +5491155...
             "name": f"{client.first_name} {client.last_name}".strip(),
-            "amount":       str(client.debt_amount or ""),
+            "amount":       elevenlabs_service.format_amount(client.debt_amount),
             "currency":     getattr(client, "currency", "ARS"),
             # Guardamos el call.id para matchear cuando lleguen los resultados
             "_call_id":     call.id,
@@ -436,7 +436,7 @@ def retry_failed_call(self, call_id: int):
     recipients = [{
         "phone_number": client.phone,
         "name": f"{client.first_name} {client.last_name}".strip(),
-        "amount":       str(client.debt_amount or ""),
+        "amount":       elevenlabs_service.format_amount(client.debt_amount),
         "currency":     getattr(client, "currency", "ARS"),
     }]
 
@@ -512,7 +512,7 @@ def process_whatsapp_batch(self, batch_id: int):
         if batch.whatsapp_template_name == "recordatorio_deuda_cobranzas":
             template_params = [
                 f"{client.first_name} {client.last_name}".strip() or "Cliente",
-                str(client.debt_amount or ""),
+                elevenlabs_service.format_amount(client.debt_amount),
             ]
         else:
             template_params = []
@@ -529,7 +529,7 @@ def process_whatsapp_batch(self, batch_id: int):
         # del agente (mismas variables que en create_batch() para llamadas).
         dynamic_variables = {
             "name":     f"{client.first_name} {client.last_name}".strip() or "Cliente",
-            "amount":   str(client.debt_amount or ""),
+            "amount":   elevenlabs_service.format_amount(client.debt_amount),
             "currency": getattr(client, "currency", "ARS"),
             "client_phone": client.phone,
         }
@@ -614,7 +614,7 @@ def retry_failed_whatsapp(self, call_id: int):
     if batch.whatsapp_template_name == "recordatorio_deuda_cobranzas":
         template_params = [
             f"{client.first_name} {client.last_name}".strip() or "Cliente",
-            str(client.debt_amount or ""),
+            elevenlabs_service.format_amount(client.debt_amount),
         ]
     else:
         template_params = []
@@ -626,7 +626,7 @@ def retry_failed_whatsapp(self, call_id: int):
 
     dynamic_variables = {
         "name":     f"{client.first_name} {client.last_name}".strip() or "Cliente",
-        "amount":   str(client.debt_amount or ""),
+        "amount":   elevenlabs_service.format_amount(client.debt_amount),
         "currency": getattr(client, "currency", "ARS"),
         "client_phone": client.phone,
     }
