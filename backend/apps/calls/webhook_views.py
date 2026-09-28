@@ -281,3 +281,138 @@ class SendPaymentLinkToolView(View):
                 "success": False,
                 "error": "No se pudo enviar el enlace por WhatsApp en este momento.",
             }, status=502)
+
+
+@method_decorator(csrf_exempt, name="dispatch")
+class CustomerLookupToolView(View):
+    """
+    POST /webhooks/customer-lookup/
+
+    Tool (server tool / webhook) para el agente de ElevenLabs: devuelve
+    nombre, monto y moneda del cliente que está hablando en la conversación.
+
+    Se usa cuando el CLIENTE inicia el contacto (WhatsApp entrante o llamada
+    entrante). En las campañas que iniciamos nosotros ya mandamos esos datos
+    como variables dinámicas, pero en un contacto entrante nadie se las pasa
+    al agente y el prompt terminaba mostrando las llaves sin reemplazar.
+
+    Body esperado (JSON):
+        {"conversation_id": "conv_xxxxx"}
+
+    Igual que el tool del enlace de pago, se identifica por conversation_id
+    (resuelto por la plataforma como system__conversation_id) y no por un
+    teléfono que tenga que escribir el modelo. Después buscamos el teléfono
+    real consultando la conversación y lo comparamos con nuestros clientes.
+
+    Respuesta:
+        {"found": true,  "name": "...", "amount": "131.134", "currency": "ARS", "note": "..."}
+        {"found": false, "message": "..."}
+
+    Detalles de la búsqueda:
+      * Los teléfonos se guardan tal cual vienen en el CSV (con o sin "+", con
+        o sin el 9 de celulares argentinos, con espacios). Por eso se comparan
+        solo los dígitos y solo los últimos 10 (código de área + número).
+      * Solo se consideran clientes activos.
+      * Si el número coincide con más de un cliente, NO se devuelve ninguno:
+        preferimos no revelar la deuda de la persona equivocada.
+    """
+
+    MIN_DIGITS = 10
+
+    @staticmethod
+    def _digits(value) -> str:
+        return "".join(ch for ch in str(value or "") if ch.isdigit())
+
+    def _find_clients(self, phone_number: str) -> list:
+        from django.db.models import CharField, F, Func, Value
+        from apps.clients.models import Client
+
+        digits = self._digits(phone_number)
+        if len(digits) < self.MIN_DIGITS:
+            return []
+
+        # regexp_replace(phone, '[^0-9]', '', 'g') -> solo dígitos, en la base
+        only_digits = Func(
+            F("phone"), Value("[^0-9]"), Value(""), Value("g"),
+            function="regexp_replace", output_field=CharField(),
+        )
+        return list(
+            Client.objects
+            .filter(is_active=True)
+            .annotate(phone_digits=only_digits)
+            .filter(phone_digits__endswith=digits[-10:])[:2]
+        )
+
+    def post(self, request):
+        if ELEVENLABS_TOOL_SECRET:
+            provided = request.headers.get("X-Tool-Secret", "")
+            if not hmac.compare_digest(provided, ELEVENLABS_TOOL_SECRET):
+                logger.warning("CustomerLookupTool: secreto inválido o ausente")
+                return JsonResponse(
+                    {"found": False, "error": "unauthorized"}, status=401
+                )
+        else:
+            logger.warning(
+                "ELEVENLABS_TOOL_SECRET no configurado — el endpoint de "
+                "consulta de cliente está sin protección. Configuralo en el .env."
+            )
+
+        try:
+            payload = json.loads(request.body)
+        except json.JSONDecodeError:
+            return JsonResponse({"found": False, "error": "invalid_json"}, status=400)
+
+        conversation_id = (payload.get("conversation_id") or "").strip()
+        if not conversation_id:
+            return JsonResponse(
+                {"found": False, "error": "falta conversation_id"}, status=400
+            )
+
+        from apps.calls.elevenlabs_service import elevenlabs_service
+
+        try:
+            conversation = elevenlabs_service.get_conversation(conversation_id)
+        except Exception as exc:
+            logger.error(f"CustomerLookupTool: error consultando conversación {conversation_id}: {exc}")
+            return JsonResponse({
+                "found": False,
+                "error": "No pude consultar los datos de la conversación.",
+            }, status=502)
+
+        phone_number = SendPaymentLinkToolView._extract_phone_number(conversation)
+        if not phone_number:
+            logger.error(f"CustomerLookupTool: sin teléfono en la conversación {conversation_id}")
+            return JsonResponse({
+                "found": False,
+                "message": "No pude identificar el número de teléfono de esta conversación.",
+            })
+
+        clients = self._find_clients(phone_number)
+
+        if len(clients) > 1:
+            logger.warning(
+                f"CustomerLookupTool: el número de la conversación {conversation_id} "
+                f"coincide con más de un cliente; no se devuelve ninguno"
+            )
+            clients = []
+
+        if not clients:
+            logger.info(f"CustomerLookupTool: conversación {conversation_id} -> sin coincidencia")
+            return JsonResponse({
+                "found": False,
+                "message": "No encontré una cuenta asociada a este número.",
+            })
+
+        client = clients[0]
+        # Ojo: no se loguea el monto, solo el resultado de la búsqueda.
+        logger.info(f"CustomerLookupTool: conversación {conversation_id} -> cliente {client.id}")
+        return JsonResponse({
+            "found": True,
+            "name": f"{client.first_name} {client.last_name}".strip(),
+            "amount": elevenlabs_service.format_amount(client.debt_amount),
+            "currency": getattr(client, "currency", "ARS"),
+            "note": (
+                "Todavía no sabés si quien escribe es el titular: confirmá que "
+                "hablás con esa persona antes de mencionar el monto."
+            ),
+        })
