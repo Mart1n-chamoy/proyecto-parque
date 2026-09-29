@@ -13,6 +13,19 @@ class Client(models.Model):
     updated_at = models.DateTimeField(_('Actualizado'), auto_now=True)
     is_active = models.BooleanField(_('Activo'), default=True)
 
+    # Datos ampliados de la cuenta (columnas opcionales del Excel/CSV:
+    # REGISTRO, DOCUMENTO, AÑO, SEMESTRE, ULTFECHAPAGO, DESCRIPCION,
+    # PARCELA, FECHAVTO). Todos opcionales: los archivos simples de
+    # siempre (solo phone_number/name/amount) siguen funcionando igual.
+    registro = models.CharField(_('N° de registro'), max_length=50, blank=True, null=True)
+    documento = models.CharField(_('Documento'), max_length=50, blank=True, null=True)
+    anio = models.IntegerField(_('Año'), blank=True, null=True)
+    semestre = models.CharField(_('Semestre'), max_length=50, blank=True, null=True)
+    last_payment_date = models.DateField(_('Fecha del último pago'), blank=True, null=True)
+    description = models.CharField(_('Descripción'), max_length=255, blank=True, null=True)
+    parcela = models.CharField(_('Parcela'), max_length=50, blank=True, null=True)
+    due_date = models.DateField(_('Fecha de vencimiento'), blank=True, null=True)
+
     class Meta:
         verbose_name = _('Cliente')
         verbose_name_plural = _('Clientes')

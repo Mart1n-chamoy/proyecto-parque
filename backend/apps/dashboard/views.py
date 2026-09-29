@@ -26,6 +26,52 @@ logger = logging.getLogger(__name__)
 REQUIRED_COLUMNS = {"phone_number", "name", "amount"}
 
 
+def _clean_str_field(value):
+    """None si la celda está vacía (NaN de pandas o string vacío), si no el string limpio."""
+    if value is None:
+        return None
+    try:
+        if pd.isna(value):
+            return None
+    except (TypeError, ValueError):
+        pass
+    text = str(value).strip()
+    return text or None
+
+
+def _clean_int_field(value):
+    """None si la celda está vacía, si no el entero (tolera floats tipo 2026.0)."""
+    if value is None:
+        return None
+    try:
+        if pd.isna(value):
+            return None
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _clean_date_field(value):
+    """
+    None si la celda está vacía (NaT/NaN), si no un date de Python.
+    Excel/pandas entregan estas columnas como Timestamp; CSV a veces
+    como string — se contempla cualquiera de los dos casos.
+    """
+    if value is None:
+        return None
+    try:
+        if pd.isna(value):
+            return None
+    except (TypeError, ValueError):
+        pass
+    if hasattr(value, "date"):
+        return value.date()
+    try:
+        return pd.to_datetime(value).date()
+    except (ValueError, TypeError):
+        return None
+
+
 class DashboardView(LoginRequiredMixin, View):
     """GET / — pantalla principal con stats y gráficos"""
 
@@ -247,7 +293,26 @@ class CampaignNewView(LoginRequiredMixin,View):
             )
             # Actualizar deuda si el cliente ya existía
             client.debt_amount = row.get("amount", client.debt_amount)
-            client.save(update_fields=["debt_amount"])
+
+            # Datos ampliados: opcionales, solo si el archivo trae esas
+            # columnas (REGISTRO, DOCUMENTO, AÑO, SEMESTRE, ULTFECHAPAGO,
+            # DESCRIPCION, PARCELA, FECHAVTO — ya vienen en minúsculas acá).
+            campos_extra = {
+                "registro":   _clean_str_field(row.get("registro")),
+                "documento":  _clean_str_field(row.get("documento")),
+                "anio":       _clean_int_field(row.get("año")),
+                "semestre":   _clean_str_field(row.get("semestre")),
+                "last_payment_date": _clean_date_field(row.get("ultfechapago")),
+                "description": _clean_str_field(row.get("descripcion")),
+                "parcela":    _clean_str_field(row.get("parcela")),
+                "due_date":   _clean_date_field(row.get("fechavto")),
+            }
+            update_fields = ["debt_amount"]
+            for campo, valor in campos_extra.items():
+                if valor is not None:
+                    setattr(client, campo, valor)
+                    update_fields.append(campo)
+            client.save(update_fields=update_fields)
 
             Call.objects.create(
                 batch=batch,

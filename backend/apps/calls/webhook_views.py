@@ -404,15 +404,35 @@ class CustomerLookupToolView(View):
             })
 
         client = clients[0]
-        # Ojo: no se loguea el monto, solo el resultado de la búsqueda.
+
+        def _fecha(d):
+            return d.strftime("%d/%m/%Y") if d else None
+
+        # Ojo: no se loguea el monto ni el resto de los datos de la cuenta,
+        # solo el resultado de la búsqueda (a qué cliente correspondió).
         logger.info(f"CustomerLookupTool: conversación {conversation_id} -> cliente {client.id}")
         return JsonResponse({
             "found": True,
             "name": f"{client.first_name} {client.last_name}".strip(),
             "amount": elevenlabs_service.format_amount(client.debt_amount),
             "currency": getattr(client, "currency", "ARS"),
+            # Datos ampliados de la cuenta (pueden venir vacíos si el
+            # archivo que se cargó no tenía esas columnas).
+            "numero_registro": client.registro,
+            "documento": client.documento,
+            "parcela": client.parcela,
+            "descripcion_deuda": client.description,
+            "periodo": (
+                f"{client.semestre} {client.anio}".strip()
+                if (client.semestre or client.anio) else None
+            ),
+            "fecha_vencimiento": _fecha(client.due_date),
+            "fecha_ultimo_pago": _fecha(client.last_payment_date),
             "note": (
                 "Todavía no sabés si quien escribe es el titular: confirmá que "
-                "hablás con esa persona antes de mencionar el monto."
+                "hablás con esa persona antes de mencionar el monto o cualquier "
+                "dato de la cuenta. Cualquier campo de datos ampliados que venga "
+                "en null significa que no está cargado — nunca lo inventes, decí "
+                "que no tenés ese dato a mano y que un asesor lo puede confirmar."
             ),
         })
