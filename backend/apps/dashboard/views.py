@@ -201,7 +201,9 @@ class CallListView(LoginRequiredMixin, View):
             qs = qs.filter(
                 models.Q(client__first_name__icontains=search) |
                 models.Q(client__last_name__icontains=search) |
-                models.Q(client__phone__icontains=search)
+                models.Q(client__phone__icontains=search) |
+                models.Q(client__documento__icontains=search) |
+                models.Q(client__registro__icontains=search)
             )
 
         paginator = Paginator(qs, 30)
