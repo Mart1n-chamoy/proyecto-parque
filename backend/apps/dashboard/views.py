@@ -496,14 +496,34 @@ class CampaignExportView(LoginRequiredMixin, View):
 
         fmt = request.GET.get("format", "csv")
 
-        headers = ["Cliente", "Teléfono", "Deuda", "Moneda", "Estado", "Resultado", "Duración (seg)", "Transcripción"]
+        # Mismas columnas y mismo orden que las que se leen al importar una
+        # campaña (ver REQUIRED_COLUMNS y campos_extra en CampaignNewView),
+        # para que la planilla que se descarga se pueda volver a subir tal
+        # cual si hace falta.
+        headers = [
+            "Cliente", "Teléfono", "Deuda", "Moneda",
+            "REGISTRO", "DOCUMENTO", "AÑO", "SEMESTRE",
+            "ULTFECHAPAGO", "DESCRIPCION", "PARCELA", "FECHAVTO",
+            "Estado", "Resultado", "Duración (seg)", "Transcripción",
+        ]
+        xlsx_date_cols = {8, 11}  # ULTFECHAPAGO y FECHAVTO (0-indexed)
+
         rows = []
         for call in calls:
+            client = call.client
             rows.append([
-                (call.client.first_name + " " + (call.client.last_name or "")).strip(),
-                call.client.phone,
-                str(call.client.debt_amount or ""),
-                getattr(call.client, "currency", "ARS"),
+                (client.first_name + " " + (client.last_name or "")).strip(),
+                client.phone,
+                str(client.debt_amount or ""),
+                getattr(client, "currency", "ARS"),
+                client.registro or "",
+                client.documento or "",
+                client.anio or "",
+                client.semestre or "",
+                client.last_payment_date,   # date o None — se formatea según csv/xlsx
+                client.description or "",
+                client.parcela or "",
+                client.due_date,            # date o None
                 call.get_status_display(),
                 call.outcome or "",
                 str(call.duration or ""),
@@ -511,7 +531,7 @@ class CampaignExportView(LoginRequiredMixin, View):
             ])
 
         if fmt == "xlsx":
-            return self._export_xlsx(batch, headers, rows)
+            return self._export_xlsx(batch, headers, rows, xlsx_date_cols)
         return self._export_csv(batch, headers, rows)
 
     def _export_csv(self, batch, headers, rows):
@@ -522,13 +542,21 @@ class CampaignExportView(LoginRequiredMixin, View):
         writer = csv.writer(response)
         writer.writerow(headers)
         for row in rows:
-            writer.writerow(row)
+            # Las fechas (objetos date) se escriben como texto DD/MM/YYYY;
+            # el resto de los valores, tal cual.
+            fila_texto = [
+                value.strftime("%d/%m/%Y") if hasattr(value, "strftime") else value
+                for value in row
+            ]
+            writer.writerow(fila_texto)
         return response
 
-    def _export_xlsx(self, batch, headers, rows):
+    def _export_xlsx(self, batch, headers, rows, date_cols=None):
         import openpyxl
         from openpyxl.styles import Font, PatternFill, Alignment
         from django.http import HttpResponse
+
+        date_cols = date_cols or set()
 
         wb = openpyxl.Workbook()
         ws = wb.active
@@ -545,9 +573,11 @@ class CampaignExportView(LoginRequiredMixin, View):
 
         for row_idx, row in enumerate(rows, 2):
             for col_idx, value in enumerate(row, 1):
-                ws.cell(row=row_idx, column=col_idx, value=value)
+                cell = ws.cell(row=row_idx, column=col_idx, value=value)
+                if (col_idx - 1) in date_cols and value:
+                    cell.number_format = "DD/MM/YYYY"
 
-        col_widths = [25, 18, 12, 10, 14, 14, 16, 60]
+        col_widths = [25, 18, 12, 10, 12, 12, 8, 12, 14, 24, 14, 14, 14, 14, 16, 60]
         for i, width in enumerate(col_widths, 1):
             ws.column_dimensions[ws.cell(row=1, column=i).column_letter].width = width
 
